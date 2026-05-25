@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# uv
+uv.lock
+
+# Ruff
+.ruff_cache/
+
+# Playwright CLI
+.playwright-cli/
+
+# GStack
+.gstack/
+
+# Claude
+.claude/
+
+# Env
+.env
+
+# OS
+.DS_Store
+
+# Build
+*.egg-info/

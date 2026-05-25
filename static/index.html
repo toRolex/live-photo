@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Photo Maker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  background: #fafafa;
+  color: #1d1d1f;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 8px; }
+.subtitle { text-align: center; color: #86868b; font-size: 14px; margin-bottom: 32px; }
+.mode-toggle {
+  display: flex; justify-content: center; gap: 8px; margin-bottom: 24px;
+}
+.mode-btn {
+  padding: 6px 16px; border: 1px solid #d2d2d7; border-radius: 20px;
+  background: #fff; font-size: 13px; cursor: pointer; color: #86868b;
+  transition: all 0.2s;
+}
+.mode-btn.active { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+.steps {
+  display: flex; gap: 16px; justify-content: center; margin-bottom: 32px;
+}
+.step {
+  text-align: center; flex: 1; padding: 16px;
+  background: #fff; border-radius: 12px; font-size: 13px; color: #86868b;
+}
+.step .num { font-size: 24px; font-weight: 600; color: #1d1d1f; display: block; margin-bottom: 4px; }
+.input-area { display: flex; gap: 8px; margin-bottom: 24px; }
+textarea {
+  flex: 1; padding: 12px 16px; border: 1px solid #d2d2d7; border-radius: 10px;
+  font-size: 15px; resize: none; height: 48px; font-family: inherit;
+  outline: none; transition: border-color 0.2s;
+}
+textarea:focus { border-color: #1d1d1f; }
+button {
+  padding: 0 20px; background: #1d1d1f; color: #fff; border: none;
+  border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer;
+  white-space: nowrap; transition: opacity 0.2s;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+#status-area {
+  background: #fff; border-radius: 12px; padding: 20px;
+  display: none; margin-bottom: 16px;
+}
+#status-area.visible { display: block; }
+.progress-bar {
+  height: 4px; background: #f5f5f7; border-radius: 2px; margin-bottom: 12px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: #1d1d1f; border-radius: 2px;
+  transition: width 0.3s; width: 0;
+}
+#status-text { font-size: 14px; color: #1d1d1f; }
+#error-text { color: #ff3b30; font-size: 14px; margin-bottom: 12px; }
+#download-area { text-align: center; display: none; }
+#download-area.visible { display: block; }
+#download-area a {
+  display: inline-block; padding: 12px 32px; background: #1d1d1f; color: #fff;
+  border-radius: 10px; text-decoration: none; font-size: 15px; font-weight: 500;
+}
+[aria-live="polite"] { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+</style>
+</head>
+<body>
+
+<h1>Live Photo Maker</h1>
+<p class="subtitle">输入文字描述，5 分钟后得到 Live Photo</p>
+
+<div class="mode-toggle">
+  <button class="mode-btn active" data-mode="cli" onclick="setMode('cli')">CLI 模式</button>
+  <button class="mode-btn" data-mode="api" onclick="setMode('api')">API 模式</button>
+</div>
+
+<div class="steps">
+  <div class="step"><span class="num">1</span>输入描述</div>
+  <div class="step"><span class="num">2</span>等待生成</div>
+  <div class="step"><span class="num">3</span>下载文件</div>
+</div>
+
+<div class="input-area">
+  <textarea id="prompt" placeholder="例如：一只戴墨镜的橘猫坐在沙滩上晒太阳" maxlength="500"></textarea>
+  <button id="submit-btn" onclick="handleSubmit()">生成</button>
+</div>
+
+<div id="status-area" aria-live="polite">
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div id="status-text"></div>
+  <div id="error-text"></div>
+</div>
+
+<div id="download-area">
+  <a id="download-link" href="#">下载 Live Photo</a>
+</div>
+
+<script>
+const POLL_INTERVAL = 3000;
+const STORAGE_KEY = 'lpm_task_id';
+
+let pollTimer = null;
+let currentMode = 'cli';
+
+function $(id) { return document.getElementById(id); }
+
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+}
+
+async function handleSubmit() {
+  const prompt = $('prompt').value.trim();
+  if (!prompt) return alert('请输入描述');
+  if (prompt.length > 500) return alert('超过 500 字符限制');
+
+  const btn = $('submit-btn');
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, mode: currentMode }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      alert(err.detail || '请求失败');
+      btn.disabled = false;
+      return;
+    }
+    const data = await resp.json();
+    localStorage.setItem(STORAGE_KEY, data.task_id);
+    startPolling(data.task_id);
+  } catch (e) {
+    alert('网络错误，请重试');
+    btn.disabled = false;
+  }
+}
+
+function startPolling(taskId) {
+  $('status-area').classList.add('visible');
+  $('download-area').classList.remove('visible');
+
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/status/${taskId}`);
+      if (!resp.ok) { clearInterval(pollTimer); return; }
+      const data = await resp.json();
+
+      $('status-text').textContent = data.progress_message || data.status;
+
+      if (data.status === 'generating_image') {
+        $('progress-fill').style.width = '33%';
+      } else if (data.status === 'generating_video') {
+        $('progress-fill').style.width = '66%';
+      } else if (data.status === 'packaging') {
+        $('progress-fill').style.width = '90%';
+      } else if (data.status === 'done') {
+        $('progress-fill').style.width = '100%';
+        clearInterval(pollTimer);
+        $('status-area').classList.remove('visible');
+        $('download-area').classList.add('visible');
+        $('download-link').href = data.download_url || `/api/download/${taskId}`;
+        localStorage.removeItem(STORAGE_KEY);
+        $('submit-btn').disabled = false;
+      } else if (data.status === 'failed') {
+        clearInterval(pollTimer);
+        $('error-text').textContent = data.error || '生成失败，请重试';
+        localStorage.removeItem(STORAGE_KEY);
+        $('submit-btn').disabled = false;
+      }
+    } catch (e) { /* polling continues */ }
+  }, POLL_INTERVAL);
+}
+
+// Recover from previous session
+window.addEventListener('DOMContentLoaded', () => {
+  const savedTask = localStorage.getItem(STORAGE_KEY);
+  if (savedTask) startPolling(savedTask);
+});
+</script>
+
+</body>
+</html>
