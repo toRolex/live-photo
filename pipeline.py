@@ -15,15 +15,17 @@ from services.seedance import APIMode, CLIMode
 from state import StateManager, TaskStatus
 
 OUTPUT_DIR = Path("output")
+IMAGE_DIR = OUTPUT_DIR / "images"
+VIDEO_DIR = OUTPUT_DIR / "videos"
 
 
 def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
-    """Save generated image to output/ directory. Returns saved file path."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Save generated image to output/images/. Returns saved file path."""
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in prompt[:30])
     filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.png"
-    filepath = OUTPUT_DIR / filename
+    filepath = IMAGE_DIR / filename
     filepath.write_bytes(image_bytes)
     return filepath
 
@@ -52,12 +54,12 @@ async def run_image_only(
 
 
 def _save_video(task_id: str, prompt: str, video_bytes: bytes) -> Path:
-    """Save generated video to output/ directory. Returns saved file path."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Save generated video to output/videos/. Returns saved file path."""
+    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (prompt or "video")[:30])
     filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.mp4"
-    filepath = OUTPUT_DIR / filename
+    filepath = VIDEO_DIR / filename
     filepath.write_bytes(video_bytes)
     return filepath
 
