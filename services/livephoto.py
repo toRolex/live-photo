@@ -1,4 +1,4 @@
-"""ffmpeg + pillow-heif Live Photo format conversion."""
+"""ffmpeg + pillow-heif Live Photo format conversion via makelive."""
 
 import asyncio
 import shutil
@@ -7,14 +7,15 @@ from pathlib import Path
 
 import pillow_heif
 from PIL import Image
+from makelive import make_live_photo as _makelive_make
 
 pillow_heif.register_heif_opener()
 
 
 async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tuple[Path, Path]:
-    """Convert video to Live Photo pair (MOV + HEIC).
+    """Convert video to Live Photo pair (MOV + HEIC) using makelive.
 
-    Returns (mov_path, heic_path). Both files share matching content_identifier
+    Returns (mov_path, heic_path). Both files share matching ContentIdentifier
     for iOS auto-pairing.
     """
     output_dir = Path(output_dir)
@@ -26,24 +27,23 @@ async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tupl
     mov_path = base_name.with_suffix(".MOV")
     heic_path = base_name.with_suffix(".HEIC")
 
-    # Step 1: Convert video to MOV with QuickTime metadata
-    await _convert_to_mov(str(video_path), str(mov_path), content_id)
+    # Step 1: Convert video to MOV with ffmpeg
+    await _convert_to_mov(str(video_path), str(mov_path))
 
-    # Step 2: Extract first frame as HEIC with matching content ID
+    # Step 2: Extract first frame as PNG, then convert to HEIC
     png_path = output_dir / "frame.png"
     await _extract_frame(str(video_path), str(png_path))
     _png_to_heic(str(png_path), str(heic_path))
     png_path.unlink(missing_ok=True)
 
-    # Step 3: Inject content_identifier into HEIC via exiftool post-process
-    await _inject_heic_content_id(heic_path, content_id)
+    # Step 3: Use makelive to inject matching ContentIdentifier into both files
+    _makelive_make(str(heic_path), str(mov_path))
 
     return mov_path, heic_path
 
 
-async def _convert_to_mov(input_path: str, output_path: str, content_id: str) -> None:
-    """ffmpeg: video -> MOV (H.264), then exiftool for QuickTime metadata."""
-    # Step 1: Convert to MOV with ffmpeg
+async def _convert_to_mov(input_path: str, output_path: str) -> None:
+    """ffmpeg: video -> MOV (H.264)."""
     cmd = [
         "ffmpeg", "-y",
         "-i", input_path,
@@ -61,24 +61,6 @@ async def _convert_to_mov(input_path: str, output_path: str, content_id: str) ->
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg MOV conversion failed: {stderr.decode()}")
-
-    # Step 2: Inject ContentIdentifier with exiftool
-    if shutil.which("exiftool"):
-        cmd2 = [
-            "exiftool", "-api", "QuickTime", "-overwrite_original",
-            f"-Keys:ContentIdentifier={content_id}",
-            output_path,
-        ]
-        proc2 = await asyncio.create_subprocess_exec(
-            *cmd2,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr2 = await proc2.communicate()
-        if proc2.returncode != 0:
-            print(f"WARNING: exiftool metadata injection failed: {stderr2.decode()}")
-        else:
-            print(f"[META] ContentIdentifier={content_id} injected into MOV")
 
 
 async def _extract_frame(video_path: str, output_path: str) -> None:
@@ -106,32 +88,3 @@ def _png_to_heic(png_path: str, heic_path: str) -> None:
     heif_file = pillow_heif.HeifFile()
     heif_file.add_from_pillow(img)
     heif_file.save(heic_path, quality=85)
-
-
-async def _inject_heic_content_id(heic_path: str | Path, content_id: str) -> None:
-    """Inject matching DocumentID into HEIC via exiftool post-process.
-
-    iOS pairs MOV + HEIC as Live Photo when both share the same identifier:
-    - MOV: com.apple.quicktime.content.identifier (written by ffmpeg)
-    - HEIC: XMP-xmpMM:DocumentID (written by exiftool)
-    """
-    heic_path = Path(heic_path)
-    if not shutil.which("exiftool"):
-        print("WARNING: exiftool not found, HEIC DocumentID will not be injected")
-        return
-
-    cmd = [
-        "exiftool", "-overwrite_original",
-        f"-XMP-xmpMM:DocumentID={content_id}",
-        str(heic_path),
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        print(f"WARNING: exiftool failed for {heic_path}: {stderr.decode()}")
-    else:
-        print(f"[META] DocumentID={content_id} injected into {heic_path.name}")
