@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -109,7 +110,7 @@ class APIMode:
         return data["data"]["task_id"]
 
     async def poll(self, task_id: str, interval: int = 5, timeout: int = 600,
-                  on_progress: callable = None) -> str:
+                  on_progress: Callable[[float, int], Awaitable[None]] | None = None) -> str:
         """Poll until task is done, return video_url."""
         query = urlencode({
             "Action": "CVSync2AsyncGetResult",

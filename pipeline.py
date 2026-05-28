@@ -171,6 +171,9 @@ async def run_video_pipeline(
                 zf.write(mov_path, arcname=mov_path.name)
                 zf.write(heic_path, arcname=heic_path.name)
 
+            # elapsed_seconds here is total time from video start to packaging done,
+            # not just the last step duration. The status endpoint returns this as-is
+            # for DONE tasks (does not recalculate via step_started_at).
             total_elapsed = round(time.time() - _v_start, 1)
             state.update(
                 task_id,

@@ -367,11 +367,15 @@ function handleFileSelect(event) {
   if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
 
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const base64 = reader.result.split(',')[1];
     $('upload-filename').textContent = file.name;
     $('upload-zone').classList.add('has-file');
-    uploadImageToServer(file.name, base64);
+    try {
+      await uploadImageToServer(file.name, base64);
+    } catch (e) {
+      showError('上传失败，请重试');
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -782,11 +786,15 @@ uploadZoneEl.addEventListener('drop', e => {
   if (!file) return;
   if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const base64 = reader.result.split(',')[1];
     $('upload-filename').textContent = file.name;
     $('upload-zone').classList.add('has-file');
-    uploadImageToServer(file.name, base64);
+    try {
+      await uploadImageToServer(file.name, base64);
+    } catch (e) {
+      showError('上传失败，请重试');
+    }
   };
   reader.readAsDataURL(file);
 });
