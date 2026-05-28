@@ -79,6 +79,17 @@ textarea:focus { border-color: #1d1d1f; }
 }
 .btn-secondary:hover { background: #e8e8ed; }
 
+/* ── Preview progress (inside card) ── */
+.preview-progress {
+  display: none;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f5f5f7;
+}
+.preview-progress-text {
+  font-size: 13px; color: #86868b; text-align: center; margin-top: 8px;
+}
+
 /* ── Status area ── */
 #status-area {
   background: #fff; border-radius: 12px; padding: 20px;
@@ -145,6 +156,10 @@ textarea:focus { border-color: #1d1d1f; }
   <div class="preview-actions">
     <button class="btn-secondary" onclick="saveImage()">保存图片</button>
     <button class="btn-primary" style="flex:1" onclick="continueToVideo()">继续生成 Live Photo</button>
+  </div>
+  <div class="preview-progress" id="preview-progress">
+    <div class="progress-bar"><div class="progress-fill" id="preview-progress-fill"></div></div>
+    <div class="preview-progress-text" id="preview-progress-text"></div>
   </div>
 </div>
 
@@ -310,6 +325,8 @@ function showImagePreview(taskId, imageBase64) {
   currentImageTaskId = taskId;
   $('preview-img').src = `data:image/png;base64,${imageBase64}`;
   $('preview-card').classList.add('visible');
+  $('preview-actions').style.display = '';
+  $('preview-progress').style.display = 'none';
 }
 
 function saveImage() {
@@ -321,7 +338,9 @@ function saveImage() {
 
 function continueToVideo() {
   if (!currentImageTaskId) return;
-  $('preview-card').classList.remove('visible');
+  $('preview-actions').style.display = 'none';
+  $('preview-progress').style.display = '';
+  $('preview-progress-text').textContent = '正在生成动态视频，请耐心等待…';
 
   fetch('/api/generate-video', {
     method: 'POST',
@@ -333,9 +352,13 @@ function continueToVideo() {
   }).then(data => {
     if (data.task_id) {
       localStorage.setItem(VIDEO_KEY, data.task_id);
-      startVideoPolling(data.task_id, () => {});
+      startVideoPolling(data.task_id, () => {
+        $('preview-card').classList.remove('visible');
+      });
     }
   }).catch(e => {
+    $('preview-progress').style.display = 'none';
+    $('preview-actions').style.display = '';
     $('error-text').textContent = e.message;
     $('status-area').classList.add('visible');
   });
@@ -355,14 +378,24 @@ function startVideoPolling(taskId, onDone) {
       if (!resp.ok) { clearInterval(pollTimer); return; }
       const data = await resp.json();
 
-      $('status-text').textContent = data.progress_message || data.status;
+      const msg = data.progress_message || data.status;
+      $('status-text').textContent = msg;
 
+      let pct = 0;
       if (data.status === 'generating_video') {
-        $('progress-fill').style.width = '50%';
+        pct = 50;
       } else if (data.status === 'packaging') {
-        $('progress-fill').style.width = '80%';
+        pct = 80;
       } else if (data.status === 'done') {
-        $('progress-fill').style.width = '100%';
+        pct = 100;
+      }
+      $('progress-fill').style.width = pct + '%';
+      const previewFill = $('preview-progress-fill');
+      if (previewFill) previewFill.style.width = pct + '%';
+      const previewText = $('preview-progress-text');
+      if (previewText) previewText.textContent = msg;
+
+      if (data.status === 'done') {
         clearInterval(pollTimer);
         $('status-area').classList.remove('visible');
         $('download-area').classList.add('visible');
@@ -372,7 +405,10 @@ function startVideoPolling(taskId, onDone) {
         onDone();
       } else if (data.status === 'failed') {
         clearInterval(pollTimer);
+        $('preview-progress').style.display = 'none';
+        $('preview-actions').style.display = '';
         $('error-text').textContent = data.error || '生成失败，请重试';
+        $('status-area').classList.add('visible');
         localStorage.removeItem(VIDEO_KEY);
         onDone();
       }

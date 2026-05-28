@@ -51,6 +51,17 @@ async def run_image_only(
         state.update(task_id, TaskStatus.FAILED, error=f"图片生成失败: {e}")
 
 
+def _save_video(task_id: str, prompt: str, video_bytes: bytes) -> Path:
+    """Save generated video to output/ directory. Returns saved file path."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (prompt or "video")[:30])
+    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.mp4"
+    filepath = OUTPUT_DIR / filename
+    filepath.write_bytes(video_bytes)
+    return filepath
+
+
 async def run_video_pipeline(
     prompt: str,
     task_id: str,
@@ -83,7 +94,11 @@ async def run_video_pipeline(
             async with AsyncClient() as client:
                 async with client.stream("GET", video_url, follow_redirects=True) as resp:
                     resp.raise_for_status()
-                    video_path.write_bytes(await resp.aread())
+                    video_bytes = await resp.aread()
+                    video_path.write_bytes(video_bytes)
+
+            saved_path = _save_video(task_id, prompt, video_bytes)
+            print(f"[SAVE] Video saved to {saved_path}")
         except Exception as e:
             state.update(task_id, TaskStatus.FAILED, error=f"视频生成失败: {e}")
             return
