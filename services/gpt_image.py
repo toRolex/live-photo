@@ -2,16 +2,27 @@
 
 import base64
 import binascii
+import os
 import re
 
 import httpx
 from openai import AsyncOpenAI
 
 
+def _get_proxy() -> str | None:
+    """Return HTTP proxy URL from environment, or None."""
+    return os.environ.get("https_proxy") or os.environ.get("http_proxy")
+
+
 class GPTImageService:
     def __init__(self, api_key: str, base_url: str = "https://wcnb.ai/v1") -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
+        proxy = _get_proxy()
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            http_client=httpx.AsyncClient(proxy=proxy, timeout=httpx.Timeout(120.0)),
+        )
+        self._http = httpx.AsyncClient(proxy=proxy, timeout=httpx.Timeout(120.0))
 
     async def generate(self, prompt: str) -> bytes:
         """Generate an image via Chat Completions streaming. Returns PNG bytes."""

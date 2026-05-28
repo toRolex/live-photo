@@ -11,9 +11,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 
 load_dotenv(override=True)
-# Remove proxy env vars entirely (not just empty) — httpx treats empty string as proxy URL
-for _k in ("https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "all_proxy"):
-    os.environ.pop(_k, None)
 from fastapi.responses import HTMLResponse, Response  # noqa: E402
 
 from dedup import DEDUP_WINDOW, make_prompt_hash
