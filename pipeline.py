@@ -39,9 +39,12 @@ async def run_image_only(
     gpt_service: GPTImageService,
 ) -> None:
     """Generate image only — returns base64, sets IMAGE_READY."""
-    state.update(task_id, TaskStatus.GENERATING_IMAGE, "1/2", "正在生成图片…")
+    _start = time.time()
+    state.update(task_id, TaskStatus.GENERATING_IMAGE, "1/2", "正在生成图片…",
+                 timeline_event="开始调用 GPT 图片生成", step_started_at=_start, elapsed_seconds=0)
     try:
         image_bytes = await gpt_service.generate(prompt)
+        _elapsed = round(time.time() - _start, 1)
         saved_path = _save_image(task_id, prompt, image_bytes)
         print(f"[SAVE] Image saved to {saved_path}")
         image_base64 = base64.b64encode(image_bytes).decode()
@@ -50,9 +53,12 @@ async def run_image_only(
             TaskStatus.IMAGE_READY,
             progress_message="图片已生成，请确认或继续",
             image_base64=image_base64,
+            timeline_event=f"图片生成完成，耗时 {_elapsed}s",
+            elapsed_seconds=_elapsed,
         )
     except Exception as e:
-        state.update(task_id, TaskStatus.FAILED, error=f"图片生成失败: {e}")
+        state.update(task_id, TaskStatus.FAILED, error=f"图片生成失败: {e}",
+                     timeline_event=f"图片生成失败: {e}")
 
 
 def _save_video(task_id: str, prompt: str, video_bytes: bytes) -> Path:
@@ -81,15 +87,35 @@ async def run_video_pipeline(
         image_path.write_bytes(image_bytes)
 
         # Step 1: Generate video
-        state.update(task_id, TaskStatus.GENERATING_VIDEO, "1/2", "正在生成动态视频…")
+        _v_start = time.time()
+        mode_label = "CLI" if is_cli_mode else "API"
+        state.update(task_id, TaskStatus.GENERATING_VIDEO, "1/2", "正在生成动态视频…",
+                     timeline_event=f"开始视频生成（{mode_label} 模式）", step_started_at=_v_start, elapsed_seconds=0)
         try:
             if is_cli_mode:
                 assert isinstance(video_service, CLIMode)
+                state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                             timeline_event="dreamina CLI 已启动")
                 video_url = await video_service.image_to_video(image_path, config)
             else:
                 assert isinstance(video_service, APIMode)
+                state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                             timeline_event="提交任务到 Seedance API")
                 seedance_task_id = await video_service.submit(config, image_bytes)
-                video_url = await video_service.poll(seedance_task_id)
+                state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                             timeline_event=f"Seedance 任务已提交: {seedance_task_id[:16]}…")
+
+                async def _on_poll(elapsed: float, attempt: int):
+                    state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                                 timeline_event=f"轮询 #{attempt}，已等待 {int(elapsed)}s",
+                                 elapsed_seconds=round(elapsed, 1))
+
+                video_url = await video_service.poll(seedance_task_id, on_progress=_on_poll)
+
+            _v_elapsed = round(time.time() - _v_start, 1)
+            state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                         timeline_event=f"视频生成完成，耗时 {_v_elapsed}s，开始下载",
+                         elapsed_seconds=_v_elapsed)
 
             video_path = tmp / "output.mp4"
             async with AsyncClient() as client:
@@ -100,14 +126,23 @@ async def run_video_pipeline(
 
             saved_path = _save_video(task_id, config.prompt, video_bytes)
             print(f"[SAVE] Video saved to {saved_path}")
+            state.update(task_id, TaskStatus.GENERATING_VIDEO,
+                         timeline_event=f"视频文件已保存: {saved_path.name}")
         except Exception as e:
-            state.update(task_id, TaskStatus.FAILED, error=f"视频生成失败: {e}")
+            state.update(task_id, TaskStatus.FAILED, error=f"视频生成失败: {e}",
+                         timeline_event=f"视频生成失败: {e}")
             return
 
         # Step 2: Package Live Photo
-        state.update(task_id, TaskStatus.PACKAGING, "2/2", "正在打包 Live Photo…")
+        _p_start = time.time()
+        state.update(task_id, TaskStatus.PACKAGING, "2/2", "正在打包 Live Photo…",
+                     timeline_event="开始 HEIC/MOV 格式转换", step_started_at=_p_start, elapsed_seconds=0)
         try:
             mov_path, heic_path, pvt_path = await make_livephoto(video_path, tmp)
+            _p_elapsed = round(time.time() - _p_start, 1)
+            state.update(task_id, TaskStatus.PACKAGING,
+                         timeline_event="HEIC/MOV 转换完成，开始打包 ZIP",
+                         elapsed_seconds=_p_elapsed)
 
             # Save Live Photo files to disk
             LIVE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,15 +171,19 @@ async def run_video_pipeline(
                 zf.write(mov_path, arcname=mov_path.name)
                 zf.write(heic_path, arcname=heic_path.name)
 
+            total_elapsed = round(time.time() - _v_start, 1)
             state.update(
                 task_id,
                 TaskStatus.DONE,
                 download_url=f"/api/download/{task_id}",
+                timeline_event=f"打包完成，总耗时 {total_elapsed}s",
+                elapsed_seconds=total_elapsed,
             )
             _ZIP_STORE[task_id] = zip_path.read_bytes()
             _ZIP_TIMESTAMPS[task_id] = time.time()
         except Exception as e:
-            state.update(task_id, TaskStatus.FAILED, error=f"打包失败: {e}")
+            state.update(task_id, TaskStatus.FAILED, error=f"打包失败: {e}",
+                         timeline_event=f"打包失败: {e}")
 
 
 _ZIP_STORE: dict[str, bytes] = {}

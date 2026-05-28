@@ -108,7 +108,8 @@ class APIMode:
             raise RuntimeError(f"Seedance API error: {data}")
         return data["data"]["task_id"]
 
-    async def poll(self, task_id: str, interval: int = 5, timeout: int = 600) -> str:
+    async def poll(self, task_id: str, interval: int = 5, timeout: int = 600,
+                  on_progress: callable = None) -> str:
         """Poll until task is done, return video_url."""
         query = urlencode({
             "Action": "CVSync2AsyncGetResult",
@@ -116,7 +117,10 @@ class APIMode:
         })
 
         deadline = time.time() + timeout
+        start = time.time()
+        attempt = 0
         while time.time() < deadline:
+            attempt += 1
             body = json.dumps({"req_key": self.REQ_KEY, "task_id": task_id})
             x_date = _now_utc()
             auth = _sign_v4(self._ak, self._sk, "POST", "/", query, body, x_date)
@@ -139,6 +143,9 @@ class APIMode:
                 return data["data"]["video_url"]
             if status == "failed":
                 raise RuntimeError(f"Seedance task failed: {data['data']}")
+            if on_progress:
+                elapsed = time.time() - start
+                await on_progress(elapsed, attempt)
             await asyncio.sleep(interval)
         raise TimeoutError("Seedance video generation timed out")
 

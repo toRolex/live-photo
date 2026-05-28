@@ -30,6 +30,9 @@ class Task:
     prompt_hash: str = ""
     image_base64: str | None = None
     video_prompt: str | None = None
+    progress_timeline: list[dict] = field(default_factory=list)
+    elapsed_seconds: float = 0.0
+    step_started_at: float = 0.0
 
 
 MAX_CONCURRENT = 10
@@ -79,6 +82,9 @@ class StateManager:
         error: str | None = None,
         image_base64: str | None = None,
         video_prompt: str | None = None,
+        timeline_event: str | None = None,
+        elapsed_seconds: float | None = None,
+        step_started_at: float | None = None,
     ) -> Task | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -97,6 +103,15 @@ class StateManager:
             task.image_base64 = image_base64
         if video_prompt is not None:
             task.video_prompt = video_prompt
+        if timeline_event is not None:
+            task.progress_timeline.append({
+                "ts": time.time(),
+                "message": timeline_event,
+            })
+        if elapsed_seconds is not None:
+            task.elapsed_seconds = elapsed_seconds
+        if step_started_at is not None:
+            task.step_started_at = step_started_at
         return task
 
     def get(self, task_id: str) -> Task | None:

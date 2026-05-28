@@ -6,6 +6,7 @@
 <title>Live Photo Maker</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   background: #fafafa;
@@ -14,6 +15,7 @@ body {
   margin: 0 auto;
   padding: 40px 20px;
 }
+
 h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 8px; }
 .subtitle { text-align: center; color: #86868b; font-size: 14px; margin-bottom: 24px; }
 
@@ -27,18 +29,11 @@ h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 8px; 
 }
 .mode-btn.active { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
 
-/* ── Tab switcher ── */
-.tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
-.tab {
-  flex: 1; text-align: center; padding: 12px 0; font-size: 14px; color: #86868b;
-  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+/* ── A区: AI 生图 ── */
+.ai-section {
+  background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px;
 }
-.tab.active { color: #1d1d1f; border-bottom-color: #1d1d1f; font-weight: 500; }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
-
-/* ── Input area ── */
-.input-area { display: flex; gap: 8px; margin-bottom: 16px; }
+.input-area { display: flex; gap: 8px; }
 textarea {
   flex: 1; padding: 12px 16px; border: 1px solid #d2d2d7; border-radius: 10px;
   font-size: 15px; resize: none; height: 48px; font-family: inherit;
@@ -52,28 +47,29 @@ textarea:focus { border-color: #1d1d1f; }
 }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ── Upload zone ── */
-.upload-zone {
-  border: 2px dashed #d2d2d7; border-radius: 12px; padding: 32px 20px;
-  text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 16px;
+/* ── Divider ── */
+.divider {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: #86868b; font-size: 13px;
 }
-.upload-zone:hover, .upload-zone.drag-over { border-color: #1d1d1f; }
-.upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
-.upload-zone .hint { font-size: 13px; color: #86868b; }
-.upload-zone input[type=file] { display: none; }
-.upload-zone .filename { font-size: 14px; color: #1d1d1f; margin-top: 8px; }
+.divider::before, .divider::after {
+  content: ''; flex: 1; height: 1px; background: #d2d2d7;
+}
 
-/* ── Upload video settings ── */
-.upload-video-settings {
-  display: none;
+/* ── B区: 上传 ── */
+.upload-section {
+  border: 2px dashed #d2d2d7; border-radius: 12px; padding: 28px 20px;
+  text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px;
   background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
 }
-.upload-video-settings.visible { display: block; }
+.upload-section:hover { border-color: #86868b; }
+.upload-section.drag-over { border-color: #1d1d1f; }
+.upload-section.has-file { border: 2px solid #34c759; background: #f0fff4; }
+.upload-section .icon { font-size: 32px; margin-bottom: 8px; }
+.upload-section .hint { font-size: 13px; color: #86868b; }
+.upload-section .filename { font-size: 14px; color: #1d1d1f; margin-top: 8px; font-weight: 500; }
+.upload-section input[type=file] { display: none; }
 
-/* ── Image preview ── */
+/* ── C区: 预览卡片 ── */
 .preview-card {
   background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; display: none;
 }
@@ -89,12 +85,8 @@ textarea:focus { border-color: #1d1d1f; }
 }
 .btn-secondary:hover { background: #e8e8ed; }
 
-/* ── Video settings panel ── */
-.video-settings {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f5f5f7;
-}
+/* ── C区: Video settings ── */
+.video-settings { margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5f5f7; }
 .video-settings summary {
   font-size: 13px; color: #86868b; cursor: pointer; user-select: none;
 }
@@ -117,54 +109,122 @@ textarea:focus { border-color: #1d1d1f; }
 .video-settings-body .row { display: flex; gap: 10px; }
 .video-settings-body .row > div { flex: 1; }
 .video-settings-body .hint-text { font-size: 11px; color: #86868b; margin-top: -6px; margin-bottom: 10px; }
+
 .btn-continue {
   width: 100%; padding: 10px 0; background: #1d1d1f; color: #fff; border: none;
   border-radius: 10px; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 4px;
+  transition: opacity 0.2s;
 }
 .btn-continue:hover { opacity: 0.9; }
-
-/* ── Preview progress (inside card) ── */
-.preview-progress {
-  display: none;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f5f5f7;
-}
-.preview-progress-text {
-  font-size: 13px; color: #86868b; text-align: center; margin-top: 8px;
-}
+.btn-continue:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Last frame upload ── */
 .last-frame-zone {
   border: 1px dashed #d2d2d7; border-radius: 8px; padding: 10px; text-align: center;
-  cursor: pointer; font-size: 12px; color: #86868b; margin-bottom: 10px;
+  cursor: pointer; font-size: 12px; color: #86868b; margin-bottom: 10px; transition: border-color 0.2s;
 }
 .last-frame-zone:hover { border-color: #1d1d1f; }
 .last-frame-zone input[type=file] { display: none; }
 
-/* ── Status area ── */
-#status-area {
-  background: #fff; border-radius: 12px; padding: 20px;
-  display: none; margin-bottom: 16px;
+/* ── D区: 进度面板 ── */
+.progress-panel {
+  background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px;
 }
-#status-area.visible { display: block; }
-.progress-bar {
+.progress-panel.hidden { display: none; }
+
+/* 请求信息 */
+.request-info {
+  background: #f5f5f7; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+  font-size: 13px; color: #86868b; word-break: break-all;
+}
+.request-info .info-label { font-weight: 500; color: #1d1d1f; }
+.request-info .info-row { margin-bottom: 4px; }
+.request-info .info-row:last-child { margin-bottom: 0; }
+
+/* 步骤指示器 */
+.step-indicator { display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+.step-dot {
+  width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 12px; font-weight: 600; background: #f5f5f7;
+  color: #86868b; border: 2px solid #e5e5ea; transition: all 0.3s;
+}
+.step-dot.active { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+.step-dot.done { background: #34c759; color: #fff; border-color: #34c759; }
+.step-dot.error { background: #ff3b30; color: #fff; border-color: #ff3b30; }
+.step-line { flex: 1; height: 2px; background: #e5e5ea; margin: 0 6px; max-width: 60px; transition: background 0.3s; }
+.step-line.done { background: #34c759; }
+
+/* 步骤标签 */
+.step-labels {
+  display: flex; justify-content: space-between; margin-bottom: 16px; padding: 0 4px;
+}
+.step-label {
+  font-size: 11px; color: #aeaeb2; text-align: center; flex: 1; transition: color 0.3s;
+}
+.step-label.active { color: #1d1d1f; font-weight: 500; }
+.step-label.done { color: #34c759; }
+
+/* 进度条 */
+.progress-bar-wrap {
   height: 4px; background: #f5f5f7; border-radius: 2px; margin-bottom: 12px; overflow: hidden;
 }
-.progress-fill {
+.progress-fill-animated {
   height: 100%; background: #1d1d1f; border-radius: 2px;
-  transition: width 0.3s; width: 0;
+  transition: width 0.4s ease; width: 0;
 }
-#status-text { font-size: 14px; color: #1d1d1f; }
-#error-text { color: #ff3b30; font-size: 14px; margin-bottom: 12px; }
+.progress-bar-wrap.indeterminate .progress-fill-animated {
+  width: 30%; animation: progressIndeterminate 1.5s ease-in-out infinite;
+}
+@keyframes progressIndeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
 
-/* ── Download area ── */
-#download-area { text-align: center; display: none; }
-#download-area.visible { display: block; }
-#download-area a {
+/* 当前状态行 */
+.current-status {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px;
+}
+.spinner {
+  width: 14px; height: 14px; border: 2px solid #e5e5ea; border-top-color: #1d1d1f;
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.elapsed-badge {
+  margin-left: auto; font-size: 11px; color: #86868b; background: #f5f5f7;
+  padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+}
+
+/* 事件日志 */
+.event-log {
+  list-style: none; max-height: 180px; overflow-y: auto; font-size: 12px;
+}
+.event-log li {
+  padding: 4px 0; color: #86868b; border-bottom: 1px solid #f5f5f7;
+  display: flex; align-items: center; gap: 6px;
+}
+.event-log li:last-child { border-bottom: none; }
+.event-log .evt-time { color: #aeaeb2; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.event-log .evt-msg { flex: 1; }
+
+/* 错误区域 */
+.error-area {
+  background: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;
+  border-left: 4px solid #ff3b30; display: none; font-size: 14px; color: #1d1d1f;
+}
+.error-area.visible { display: block; }
+
+/* 下载区域 */
+.download-area {
+  text-align: center; display: none; margin-bottom: 16px;
+}
+.download-area.visible { display: block; }
+.download-area a {
   display: inline-block; padding: 12px 32px; background: #1d1d1f; color: #fff;
   border-radius: 10px; text-decoration: none; font-size: 15px; font-weight: 500;
+  transition: opacity 0.2s;
 }
+.download-area a:hover { opacity: 0.9; }
+
 [aria-live="polite"] { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
@@ -178,76 +238,38 @@ textarea:focus { border-color: #1d1d1f; }
   <button class="mode-btn active" data-mode="api" onclick="setMode('api')">API 模式</button>
 </div>
 
-<div class="tab-bar">
-  <div class="tab active" data-tab="text" onclick="switchTab('text')">文生图</div>
-  <div class="tab" data-tab="upload" onclick="switchTab('upload')">上传图片</div>
-</div>
-
-<!-- Text-to-Image panel -->
-<div class="tab-panel active" id="panel-text">
+<!-- A区: AI 生图 -->
+<div class="ai-section">
   <div class="input-area">
     <textarea id="prompt" placeholder="例如：一只戴墨镜的橘猫坐在沙滩上晒太阳" maxlength="500"></textarea>
     <button class="btn-primary" id="submit-btn" onclick="handleTextSubmit()">生成图片</button>
   </div>
 </div>
 
-<!-- Upload panel -->
-<div class="tab-panel" id="panel-upload">
-  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
-    <div class="icon">📁</div>
-    <div class="hint">点击或拖拽图片到这里（支持 JPG/PNG/HEIC，最大 20MB）</div>
-    <div class="filename" id="upload-filename"></div>
-    <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(event)">
-  </div>
-  <button class="btn-primary" id="upload-btn" style="width:100%" disabled onclick="showUploadSettings()">设置参数并生成</button>
+<!-- 分隔线 -->
+<div class="divider">或</div>
+
+<!-- B区: 上传 -->
+<div class="upload-section" id="upload-zone" onclick="document.getElementById('file-input').click()">
+  <div class="icon">&#x1F4C1;</div>
+  <div class="hint">点击或拖拽图片到这里（支持 JPG/PNG/HEIC，最大 20MB）</div>
+  <div class="filename" id="upload-filename"></div>
+  <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(event)">
 </div>
 
-<!-- Upload video settings -->
-<div class="upload-video-settings" id="upload-video-settings">
-  <div class="video-settings-body">
-    <label for="upload-video-prompt">视频提示词</label>
-    <textarea id="upload-video-prompt" maxlength="800" placeholder="描述视频中的动态效果"></textarea>
-    <p class="hint-text">建议400字以内</p>
-
-    <div class="row">
-      <div>
-        <label for="upload-video-frames">时长</label>
-        <select id="upload-video-frames">
-          <option value="121">5 秒</option>
-          <option value="241">10 秒</option>
-        </select>
-      </div>
-      <div>
-        <label for="upload-video-seed">随机种子</label>
-        <input type="number" id="upload-video-seed" value="-1" min="-1" max="999999">
-        <p class="hint-text">-1=随机，相同种子+相同参数=相同视频</p>
-      </div>
-    </div>
-
-    <label>尾帧图片（可选）</label>
-    <div class="last-frame-zone" onclick="document.getElementById('upload-last-frame-input').click()">
-      <div id="upload-last-frame-label">点击上传尾帧图片（PNG/JPG）</div>
-      <input type="file" id="upload-last-frame-input" accept="image/png,image/jpeg" onchange="handleUploadLastFrameSelect(event)">
-    </div>
-
-    <button class="btn-continue" onclick="handleUploadSubmit()">开始生成 Live Photo</button>
-  </div>
-</div>
-
-<!-- Image preview card -->
+<!-- C区: 预览 + 视频设置 -->
 <div class="preview-card" id="preview-card">
-  <img id="preview-img" src="" alt="生成的图片">
+  <img id="preview-img" src="" alt="预览图片">
   <div class="preview-actions">
     <button class="btn-secondary" onclick="saveImage()">保存图片</button>
   </div>
 
-  <!-- Video settings -->
   <details class="video-settings" id="video-settings">
     <summary>视频参数设置</summary>
     <div class="video-settings-body">
       <label for="video-prompt">视频提示词</label>
       <textarea id="video-prompt" maxlength="800" placeholder="描述视频中的动态效果"></textarea>
-      <p class="hint-text">默认使用图片生成时的描述，可修改。建议400字以内</p>
+      <p class="hint-text">建议400字以内</p>
 
       <div class="row">
         <div>
@@ -270,26 +292,46 @@ textarea:focus { border-color: #1d1d1f; }
         <input type="file" id="last-frame-input" accept="image/png,image/jpeg" onchange="handleLastFrameSelect(event)">
       </div>
 
-      <button class="btn-continue" onclick="continueToVideo()">继续生成 Live Photo</button>
+      <button class="btn-continue" id="continue-btn" onclick="continueToVideo()">继续生成 Live Photo</button>
     </div>
   </details>
+</div>
 
-  <!-- Progress (shown during video generation) -->
-  <div class="preview-progress" id="preview-progress">
-    <div class="progress-bar"><div class="progress-fill" id="preview-progress-fill"></div></div>
-    <div class="preview-progress-text" id="preview-progress-text"></div>
+<!-- D区: 进度面板 -->
+<div class="progress-panel hidden" id="progress-panel" aria-live="polite">
+  <div class="request-info" id="request-info"></div>
+
+  <div class="step-indicator">
+    <div class="step-dot step-dot-1" id="step-dot-1">1</div>
+    <div class="step-line step-line-1" id="step-line-1"></div>
+    <div class="step-dot step-dot-2" id="step-dot-2">2</div>
+    <div class="step-line step-line-2" id="step-line-2"></div>
+    <div class="step-dot step-dot-3" id="step-dot-3">3</div>
   </div>
+  <div class="step-labels">
+    <span class="step-label" id="step-label-1">获取图片</span>
+    <span class="step-label" id="step-label-2">生成视频</span>
+    <span class="step-label" id="step-label-3">打包</span>
+  </div>
+
+  <div class="progress-bar-wrap" id="progress-bar-wrap">
+    <div class="progress-fill-animated" id="progress-fill"></div>
+  </div>
+
+  <div class="current-status">
+    <span class="spinner" id="status-spinner"></span>
+    <span id="status-text">准备中…</span>
+    <span class="elapsed-badge" id="elapsed-badge"></span>
+  </div>
+
+  <ul class="event-log" id="event-log"></ul>
 </div>
 
-<!-- Status area -->
-<div id="status-area" aria-live="polite">
-  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-  <div id="status-text"></div>
-  <div id="error-text"></div>
-</div>
+<!-- 错误区 -->
+<div class="error-area" id="error-area"></div>
 
-<!-- Download area -->
-<div id="download-area">
+<!-- 下载区 -->
+<div class="download-area" id="download-area">
   <a id="download-link" href="#">下载 Live Photo</a>
 </div>
 
@@ -302,12 +344,13 @@ const VIDEO_KEY = 'lpm_video_task';
 let pollTimer = null;
 let currentMode = 'api';
 let currentImageTaskId = null;
-let selectedFile = null;
 let lastFrameB64 = null;
-let uploadLastFrameB64 = null;
-let imagePrompt = '';
+let activeTaskId = null;
+let activeSourceLabel = '';
 
 function $(id) { return document.getElementById(id); }
+
+// ── Mode ──
 
 function setMode(mode) {
   currentMode = mode;
@@ -316,84 +359,59 @@ function setMode(mode) {
   });
 }
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
-  $('error-text').textContent = '';
-  $('status-area').classList.remove('visible');
-  $('download-area').classList.remove('visible');
-  // 清理非当前 tab 的残留状态，防止预览卡片在上传模式下仍可见
-  if (tab !== 'text') {
-    $('preview-card').classList.remove('visible');
-    localStorage.removeItem(IMAGE_KEY);
-  } else {
-    $('upload-video-settings').classList.remove('visible');
-    $('preview-card').classList.remove('visible');
-    localStorage.removeItem(VIDEO_KEY);
+// ── File select / upload ──
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    $('upload-filename').textContent = file.name;
+    $('upload-zone').classList.add('has-file');
+    uploadImageToServer(file.name, base64);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function uploadImageToServer(filename, base64) {
+  try {
+    const byteChars = atob(base64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) { byteArr[i] = byteChars.charCodeAt(i); }
+    const blob = new Blob([byteArr], { type: 'image/png' });
+
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+
+    const resp = await fetch('/api/upload-image', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showError(err.detail || '上传失败');
+      return;
+    }
+    const data = await resp.json();
+
+    // Upload mode: IMAGE_READY, show preview immediately
+    currentImageTaskId = data.task_id;
+    localStorage.setItem(IMAGE_KEY, data.task_id);
+    activeSourceLabel = 'upload:' + filename;
+
+    showImagePreview(data.task_id, base64, '');
+  } catch (e) {
+    showError('网络错误，请重试');
   }
 }
 
-function selectFile(file) {
-  if (!file) return;
-  if (file.size > MAX_FILE_SIZE) { alert(`图片不能超过 ${MAX_FILE_SIZE / 1024 / 1024}MB`); return; }
-  selectedFile = file;
-  $('upload-filename').textContent = file.name;
-  $('upload-btn').disabled = false;
-}
-
-function handleFileSelect(event) {
-  selectFile(event.target.files[0]);
-}
-
-// Drag & drop
-const uploadZone = $('upload-zone');
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => {
-  e.preventDefault();
-  uploadZone.classList.remove('drag-over');
-  selectFile(e.dataTransfer.files[0]);
-});
-
-function handleLastFrameSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  if (file.size > 4.7 * 1024 * 1024) { alert('尾帧图片不能超过 4.7MB'); return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    lastFrameB64 = reader.result.split(',')[1];
-    $('last-frame-label').textContent = `已选择: ${file.name}`;
-  };
-  reader.readAsDataURL(file);
-}
-
-function handleUploadLastFrameSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  if (file.size > 4.7 * 1024 * 1024) { alert('尾帧图片不能超过 4.7MB'); return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    uploadLastFrameB64 = reader.result.split(',')[1];
-    $('upload-last-frame-label').textContent = `已选择: ${file.name}`;
-  };
-  reader.readAsDataURL(file);
-}
-
-function showUploadSettings() {
-  if (!selectedFile) return alert('请先选择图片');
-  $('upload-video-settings').classList.add('visible');
-  // 上传模式不应显示预览卡片
-  $('preview-card').classList.remove('visible');
-}
-
-// ── Text → Image ──
+// ── Text → Image (AI) ──
 
 async function handleTextSubmit() {
   const prompt = $('prompt').value.trim();
   if (!prompt) return alert('请输入描述');
   if (prompt.length > 500) return alert('超过 500 字符限制');
 
-  imagePrompt = prompt;
   const btn = $('submit-btn');
   btn.disabled = true;
 
@@ -405,122 +423,85 @@ async function handleTextSubmit() {
     });
     if (!resp.ok) {
       const err = await resp.json();
-      alert(err.detail || '请求失败');
+      showError(err.detail || '请求失败');
       btn.disabled = false;
       return;
     }
     const data = await resp.json();
     currentImageTaskId = data.task_id;
+    activeSourceLabel = 'ai:' + prompt.substring(0, 40);
     localStorage.setItem(IMAGE_KEY, data.task_id);
     startImagePolling(data.task_id);
   } catch (e) {
-    alert('网络错误，请重试');
+    showError('网络错误，请重试');
     btn.disabled = false;
   }
 }
 
 function startImagePolling(taskId) {
-  $('status-area').classList.add('visible');
-  $('error-text').textContent = '';
-  if (pollTimer) clearInterval(pollTimer);
+  clearPollTimer();
+  showProgressPanel(taskId, 'ai');
+  resetSteps();
+  setStep(1, 'active');
+  $('status-text').textContent = '正在生成图片…';
+  hideError();
+
   pollTimer = setInterval(async () => {
     try {
-      const resp = await fetch(`/api/status/${taskId}`);
-      if (!resp.ok) { clearInterval(pollTimer); return; }
+      const resp = await fetch('/api/status/' + taskId);
+      if (!resp.ok) { clearPollTimer(); return; }
       const data = await resp.json();
+      updateProgressFromData(data);
 
-      $('status-text').textContent = data.progress_message || data.status;
-
-      if (data.status === 'generating_image') {
-        $('progress-fill').style.width = '50%';
-      } else if (data.status === 'image_ready') {
-        $('progress-fill').style.width = '100%';
-        clearInterval(pollTimer);
-        $('status-area').classList.remove('visible');
+      if (data.status === 'image_ready') {
+        clearPollTimer();
         showImagePreview(taskId, data.image_base64, data.video_prompt);
         $('submit-btn').disabled = false;
       } else if (data.status === 'failed') {
-        clearInterval(pollTimer);
-        $('error-text').textContent = data.error || '生成失败，请重试';
+        clearPollTimer();
+        showError(data.error || '生成失败，请重试');
         localStorage.removeItem(IMAGE_KEY);
         $('submit-btn').disabled = false;
       }
-    } catch (e) { /* continue */ }
+    } catch (e) { /* continue polling */ }
   }, POLL_INTERVAL);
 }
 
-// ── Upload → Video ──
-
-async function handleUploadSubmit() {
-  if (!selectedFile) return alert('请先选择图片');
-
-  const btn = $('upload-btn');
-  btn.disabled = true;
-  $('upload-video-settings').classList.remove('visible');
-
-  // Show status area for progress
-  $('status-area').classList.add('visible');
-  $('error-text').textContent = '';
-  $('status-text').textContent = '已上传图片，正在生成视频…';
-  $('progress-fill').style.width = '25%';
-
-  try {
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('mode', currentMode);
-    formData.append('video_prompt', $('upload-video-prompt').value);
-    formData.append('video_frames', $('upload-video-frames').value);
-    formData.append('video_seed', $('upload-video-seed').value);
-    if (uploadLastFrameB64) {
-      formData.append('last_frame_base64', uploadLastFrameB64);
-    }
-
-    const resp = await fetch('/api/upload-and-generate', {
-      method: 'POST',
-      body: formData,
-    });
-    if (!resp.ok) {
-      const err = await resp.json();
-      alert(err.detail || '请求失败');
-      btn.disabled = false;
-      return;
-    }
-    const data = await resp.json();
-    localStorage.setItem(VIDEO_KEY, data.task_id);
-    startVideoPolling(data.task_id, () => {
-      btn.disabled = false;
-      // Reset upload state
-      selectedFile = null;
-      uploadLastFrameB64 = null;
-      $('upload-filename').textContent = '';
-      $('upload-video-prompt').value = '';
-      $('upload-last-frame-label').textContent = '点击上传尾帧图片（PNG/JPG）';
-    });
-  } catch (e) {
-    alert('网络错误，请重试');
-    btn.disabled = false;
-  }
-}
-
-// ── Image preview + actions ──
+// ── Image preview ──
 
 function showImagePreview(taskId, imageBase64, videoPrompt) {
   currentImageTaskId = taskId;
-  $('preview-img').src = `data:image/png;base64,${imageBase64}`;
+  if (imageBase64) {
+    $('preview-img').src = 'data:image/png;base64,' + imageBase64;
+  }
   $('preview-card').classList.add('visible');
-  $('preview-actions').style.display = '';
-  $('video-settings').style.display = '';
-  $('preview-progress').style.display = 'none';
-
-  $('video-prompt').value = videoPrompt || imagePrompt || '';
+  $('video-settings').open = false;
+  $('video-prompt').value = videoPrompt || '';
+  $('continue-btn').disabled = false;
 }
 
 function saveImage() {
   const link = document.createElement('a');
-  link.download = `livephoto_${Date.now()}.png`;
+  link.download = 'livephoto_' + Date.now() + '.png';
   link.href = $('preview-img').src;
   link.click();
 }
+
+// ── Last frame ──
+
+function handleLastFrameSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 4.7 * 1024 * 1024) { alert('尾帧图片不能超过 4.7MB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    lastFrameB64 = reader.result.split(',')[1];
+    $('last-frame-label').textContent = '已选择: ' + file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Video generation ──
 
 function collectVideoSettings() {
   return {
@@ -531,94 +512,284 @@ function collectVideoSettings() {
   };
 }
 
-function continueToVideo() {
+async function continueToVideo() {
   if (!currentImageTaskId) return;
-  $('preview-actions').style.display = 'none';
-  $('video-settings').style.display = 'none';
-  $('preview-progress').style.display = '';
-  $('preview-progress-text').textContent = '正在生成动态视频，请耐心等待…';
+  $('continue-btn').disabled = true;
+  hideError();
 
   const settings = collectVideoSettings();
+  activeTaskId = currentImageTaskId;
 
-  fetch('/api/generate-video', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      task_id: currentImageTaskId,
-      mode: currentMode,
-      ...settings,
-    }),
-  }).then(r => {
-    if (!r.ok) return r.json().then(err => { throw new Error(err.detail || '请求失败'); });
-    return r.json();
-  }).then(data => {
+  try {
+    const resp = await fetch('/api/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: currentImageTaskId,
+        mode: currentMode,
+        ...settings,
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      showError(err.detail || '请求失败');
+      $('continue-btn').disabled = false;
+      return;
+    }
+    const data = await resp.json();
     if (data.task_id) {
       localStorage.setItem(VIDEO_KEY, data.task_id);
+      activeTaskId = data.task_id;
       startVideoPolling(data.task_id, () => {
         $('preview-card').classList.remove('visible');
       });
     }
-  }).catch(e => {
-    $('preview-progress').style.display = 'none';
-    $('preview-actions').style.display = '';
-    $('video-settings').style.display = '';
-    $('error-text').textContent = e.message;
-    $('status-area').classList.add('visible');
-  });
+  } catch (e) {
+    showError('网络错误，请重试');
+    $('continue-btn').disabled = false;
+  }
 }
 
-// ── Video polling ──
-
 function startVideoPolling(taskId, onDone) {
-  $('status-area').classList.add('visible');
+  clearPollTimer();
+  showProgressPanel(taskId, 'video');
+  resetSteps();
+  setStep(1, 'done');
+  setStep(2, 'active');
+  $('status-text').textContent = '正在生成视频…';
   $('download-area').classList.remove('visible');
-  $('error-text').textContent = '';
+  hideError();
 
-  if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try {
-      const resp = await fetch(`/api/status/${taskId}`);
-      if (!resp.ok) { clearInterval(pollTimer); return; }
+      const resp = await fetch('/api/status/' + taskId);
+      if (!resp.ok) { clearPollTimer(); return; }
       const data = await resp.json();
-
-      const msg = data.progress_message || data.status;
-      $('status-text').textContent = msg;
-
-      let pct = 0;
-      if (data.status === 'generating_video') {
-        pct = 50;
-      } else if (data.status === 'packaging') {
-        pct = 80;
-      } else if (data.status === 'done') {
-        pct = 100;
-      }
-      $('progress-fill').style.width = pct + '%';
-      const previewFill = $('preview-progress-fill');
-      if (previewFill) previewFill.style.width = pct + '%';
-      const previewText = $('preview-progress-text');
-      if (previewText) previewText.textContent = msg;
+      updateProgressFromData(data);
 
       if (data.status === 'done') {
-        clearInterval(pollTimer);
-        $('status-area').classList.remove('visible');
+        clearPollTimer();
         $('download-area').classList.add('visible');
-        $('download-link').href = data.download_url || `/api/download/${taskId}`;
+        $('download-link').href = data.download_url || ('/api/download/' + taskId);
         localStorage.removeItem(VIDEO_KEY);
         localStorage.removeItem(IMAGE_KEY);
         onDone();
       } else if (data.status === 'failed') {
-        clearInterval(pollTimer);
-        $('preview-progress').style.display = 'none';
-        $('preview-actions').style.display = '';
-        $('video-settings').style.display = '';
-        $('error-text').textContent = data.error || '生成失败，请重试';
-        $('status-area').classList.add('visible');
+        clearPollTimer();
+        showError(data.error || '生成失败，请重试');
+        $('continue-btn').disabled = false;
         localStorage.removeItem(VIDEO_KEY);
         onDone();
       }
-    } catch (e) { /* continue */ }
+    } catch (e) { /* continue polling */ }
   }, POLL_INTERVAL);
 }
+
+// ── Progress panel ──
+
+function showProgressPanel(taskId, mode) {
+  activeTaskId = taskId;
+  $('progress-panel').classList.remove('hidden');
+
+  let infoHtml = '';
+  if (activeSourceLabel && activeSourceLabel.startsWith('ai:')) {
+    infoHtml = '<strong>来源：</strong>AI 生成<br><strong>描述：</strong>' + escHtml(activeSourceLabel.substring(3));
+  } else if (activeSourceLabel && activeSourceLabel.startsWith('upload:')) {
+    infoHtml = '<strong>来源：</strong>上传图片<br><strong>文件：</strong>' + escHtml(activeSourceLabel.substring(7));
+  } else {
+    infoHtml = '<strong>来源：</strong>' + escHtml(mode || activeSourceLabel || '-');
+  }
+  infoHtml += '<br><strong>模式：</strong>' + (currentMode === 'cli' ? 'CLI' : 'API');
+
+  $('request-info').innerHTML = infoHtml;
+}
+
+function hideProgressPanel() {
+  $('progress-panel').classList.add('hidden');
+  activeTaskId = null;
+}
+
+function resetSteps() {
+  elapsedStart = null;
+  [1, 2, 3].forEach(n => {
+    const dot = $('step-dot-' + n);
+    const line = n < 3 ? $('step-line-' + n) : null;
+    const label = $('step-label-' + n);
+    dot.className = 'step-dot step-dot-' + n;
+    dot.textContent = n;
+    if (line) line.className = 'step-line step-line-' + n;
+    if (label) label.className = 'step-label';
+  });
+  $('progress-fill').style.width = '0%';
+  $('progress-bar-wrap').classList.remove('indeterminate');
+  $('status-spinner').style.display = '';
+  $('elapsed-badge').textContent = '';
+  $('event-log').innerHTML = '';
+}
+
+function setStep(n, state) {
+  const dot = $('step-dot-' + n);
+  dot.className = 'step-dot step-dot-' + n + ' ' + state;
+  if (state === 'done') {
+    dot.textContent = '✓';
+  } else if (state === 'error') {
+    dot.textContent = '!';
+  } else {
+    dot.textContent = n;
+  }
+  if (n > 1) {
+    const line = $('step-line-' + (n - 1));
+    line.className = 'step-line step-line-' + (n - 1) + (state === 'done' ? ' done' : '');
+  }
+  // 步骤标签
+  const label = $('step-label-' + n);
+  if (label) {
+    label.className = 'step-label' + (state === 'active' ? ' active' : '') + (state === 'done' ? ' done' : '');
+  }
+}
+
+let elapsedStart = null;
+
+function updateProgressFromData(data) {
+  const status = data.status || '';
+
+  // Track elapsed — prefer backend value when available
+  if (data.elapsed_seconds > 0) {
+    $('elapsed-badge').textContent = formatElapsed(Math.floor(data.elapsed_seconds));
+  } else if (!elapsedStart) {
+    elapsedStart = Date.now();
+    $('elapsed-badge').textContent = '0s';
+  } else {
+    const sec = Math.floor((Date.now() - elapsedStart) / 1000);
+    $('elapsed-badge').textContent = formatElapsed(sec);
+  }
+
+  // Progress bar
+  let pct = 0;
+  if (status === 'generating_image') {
+    pct = 30;
+    setStep(1, 'active');
+    $('status-text').textContent = data.progress_message || '生成图片中…';
+    $('progress-bar-wrap').classList.add('indeterminate');
+  } else if (status === 'image_ready') {
+    pct = 100;
+    setStep(1, 'done');
+    $('status-text').textContent = '图片生成完成';
+    $('progress-bar-wrap').classList.remove('indeterminate');
+  } else if (status === 'generating_video') {
+    pct = 40;
+    setStep(2, 'active');
+    $('status-text').textContent = data.progress_message || '生成视频中…';
+    $('progress-bar-wrap').classList.add('indeterminate');
+  } else if (status === 'packaging') {
+    pct = 80;
+    setStep(2, 'done');
+    setStep(3, 'active');
+    $('status-text').textContent = data.progress_message || '封装 Live Photo…';
+    $('progress-bar-wrap').classList.remove('indeterminate');
+  } else if (status === 'done') {
+    pct = 100;
+    setStep(2, 'done');
+    setStep(3, 'done');
+    $('status-text').textContent = '生成完成!';
+    $('status-spinner').style.display = 'none';
+    $('progress-bar-wrap').classList.remove('indeterminate');
+  } else if (status === 'failed') {
+    setStep(1, 'error');
+    setStep(2, 'error');
+    setStep(3, 'error');
+    $('status-text').textContent = data.error || '任务失败';
+    $('status-spinner').style.display = 'none';
+    $('progress-bar-wrap').classList.remove('indeterminate');
+  }
+
+  if (!status || status === 'queued') {
+    pct = 5;
+    $('progress-bar-wrap').classList.add('indeterminate');
+    $('status-text').textContent = data.progress_message || '排队中…';
+  }
+
+  $('progress-fill').style.width = pct + '%';
+
+  // Event log — use backend progress_timeline
+  const timeline = data.progress_timeline || [];
+  const log = $('event-log');
+  const currentCount = log.querySelectorAll('li').length;
+  for (let i = currentCount; i < timeline.length; i++) {
+    const item = timeline[i];
+    const li = document.createElement('li');
+    const d = new Date(item.ts * 1000);
+    const time = d.getHours().toString().padStart(2, '0') + ':' +
+                 d.getMinutes().toString().padStart(2, '0') + ':' +
+                 d.getSeconds().toString().padStart(2, '0');
+    li.innerHTML = '<span class="evt-time">' + time + '</span><span class="evt-msg">' + escHtml(item.message) + '</span>';
+    log.appendChild(li);
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function appendEvent(msg) {
+  if (!msg) return;
+  const log = $('event-log');
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2, '0') + ':' +
+               now.getMinutes().toString().padStart(2, '0') + ':' +
+               now.getSeconds().toString().padStart(2, '0');
+  const li = document.createElement('li');
+  li.innerHTML = '<span class="evt-time">' + time + '</span><span class="evt-msg">' + escHtml(msg) + '</span>';
+  log.appendChild(li);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Error ──
+
+function showError(msg) {
+  $('error-area').textContent = msg;
+  $('error-area').classList.add('visible');
+}
+
+function hideError() {
+  $('error-area').classList.remove('visible');
+  $('error-area').textContent = '';
+}
+
+// ── Utils ──
+
+function clearPollTimer() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function formatElapsed(s) {
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return m + 'm ' + rs + 's';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Drag & drop ──
+
+const uploadZoneEl = $('upload-zone');
+uploadZoneEl.addEventListener('dragover', e => { e.preventDefault(); uploadZoneEl.classList.add('drag-over'); });
+uploadZoneEl.addEventListener('dragleave', () => uploadZoneEl.classList.remove('drag-over'));
+uploadZoneEl.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZoneEl.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    $('upload-filename').textContent = file.name;
+    $('upload-zone').classList.add('has-file');
+    uploadImageToServer(file.name, base64);
+  };
+  reader.readAsDataURL(file);
+});
 
 // ── Session recovery ──
 
@@ -626,8 +797,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const savedImage = localStorage.getItem(IMAGE_KEY);
   const savedVideo = localStorage.getItem(VIDEO_KEY);
   if (savedVideo) {
+    activeTaskId = savedVideo;
+    activeSourceLabel = 'session-recovery';
     startVideoPolling(savedVideo, () => {});
   } else if (savedImage) {
+    currentImageTaskId = savedImage;
+    activeSourceLabel = 'session-recovery';
     startImagePolling(savedImage);
   }
 });

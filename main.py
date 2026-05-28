@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -111,6 +112,41 @@ async def generate_image(request: Request):
     return {"task_id": task_id}
 
 
+@app.post("/api/upload-image")
+async def upload_image(request: Request):
+    """Upload an image — directly set IMAGE_READY, no background task."""
+    form = await request.form()
+    raw = form.get("file")
+    file = raw if hasattr(raw, "filename") and hasattr(raw, "read") else None
+
+    if not file or not file.filename:
+        raise HTTPException(400, "请上传图片文件")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(400, "图片文件不能超过 20MB")
+
+    ip = request.client.host if request.client else "unknown"
+    manager: StateManager = app.state.manager
+
+    task_id = str(uuid.uuid4())
+    try:
+        manager.create(task_id, ip, "", "")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    image_base64 = base64.b64encode(image_bytes).decode()
+    manager.update(
+        task_id,
+        TaskStatus.IMAGE_READY,
+        progress_message="图片已上传，请确认或继续",
+        image_base64=image_base64,
+        timeline_event=f"图片已上传: {file.filename}",
+    )
+
+    return {"task_id": task_id}
+
+
 @app.post("/api/generate-video")
 async def generate_video(request: Request):
     """Continue with video generation using the image from a completed image task."""
@@ -167,66 +203,6 @@ async def generate_video(request: Request):
     return {"task_id": task_id}
 
 
-# ── Upload image → video ───────────────────────────────────────────────
-
-
-@app.post("/api/upload-and-generate")
-async def upload_and_generate(request: Request):
-    """Upload an image → generate video + package live photo."""
-    form = await request.form()
-    raw = form.get("file")
-    file = raw if hasattr(raw, "filename") and hasattr(raw, "read") else None
-    mode = _normalize_mode(form.get("mode"), default="api")
-
-    if not file or not file.filename:
-        raise HTTPException(400, "请上传图片文件")
-
-    image_bytes = await file.read()
-    if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(400, "图片文件不能超过 20MB")
-
-    video_prompt = (form.get("video_prompt") or "").strip()
-    video_seed = int(form.get("video_seed", -1) or -1)
-    video_frames = int(form.get("video_frames", 121) or 121)
-    last_frame_b64 = form.get("last_frame_base64")
-    last_frame_bytes = base64.b64decode(last_frame_b64) if last_frame_b64 else None
-    config = VideoConfig(
-        prompt=video_prompt,
-        seed=video_seed,
-        frames=video_frames,
-        last_frame_bytes=last_frame_bytes,
-    )
-
-    ip = request.client.host if request.client else "unknown"
-    manager: StateManager = app.state.manager
-
-    task_id = str(uuid.uuid4())
-    try:
-        manager.create(task_id, ip, "", "")
-    except RuntimeError as e:
-        raise HTTPException(503, str(e))
-
-    is_cli = mode == "cli"
-    video = app.state.video_cli if is_cli else app.state.video_api
-    if video is None:
-        raise HTTPException(503, "视频生成服务未配置")
-
-    manager.update(task_id, TaskStatus.GENERATING_VIDEO, progress_message="已上传图片，正在生成视频…")
-
-    asyncio.create_task(
-        run_video_pipeline(
-            config=config,
-            task_id=task_id,
-            state=manager,
-            video_service=video,
-            image_bytes=image_bytes,
-            is_cli_mode=is_cli,
-        )
-    )
-
-    return {"task_id": task_id}
-
-
 # ── One-shot (legacy compatibility) ────────────────────────────────────
 
 
@@ -265,49 +241,32 @@ async def generate(request: Request):
     if video is None:
         raise HTTPException(503, "视频生成服务未配置")
 
-    asyncio.create_task(
-        _run_one_shot(
-            prompt=prompt,
-            task_id=task_id,
-            manager=manager,
-            gpt_service=app.state.gpt,
-            video_service=video,
-            is_cli_mode=is_cli,
-        )
-    )
+    async def _run_one_shot():
+        """One-shot: generate image then immediately continue to video."""
+        try:
+            await run_image_only(prompt, task_id, manager, app.state.gpt)
+            task = manager.get(task_id)
+            if task is None or task.status != TaskStatus.IMAGE_READY:
+                return
+            image_bytes = base64.b64decode(task.image_base64) if task.image_base64 else None
+            if not image_bytes:
+                manager.update(task_id, TaskStatus.FAILED, error="图片数据无效")
+                return
+            config = VideoConfig(prompt=prompt)
+            await run_video_pipeline(
+                config=config,
+                task_id=task_id,
+                state=manager,
+                video_service=video,
+                image_bytes=image_bytes,
+                is_cli_mode=is_cli,
+            )
+        except Exception as e:
+            manager.update(task_id, TaskStatus.FAILED, error=f"生成失败: {e}")
+
+    asyncio.create_task(_run_one_shot())
 
     return {"task_id": task_id}
-
-
-async def _run_one_shot(
-    prompt: str,
-    task_id: str,
-    manager: StateManager,
-    gpt_service: GPTImageService,
-    video_service: APIMode | CLIMode,
-    is_cli_mode: bool,
-) -> None:
-    """One-shot: generate image then immediately continue to video."""
-    try:
-        await run_image_only(prompt, task_id, manager, gpt_service)
-        task = manager.get(task_id)
-        if task is None or task.status != TaskStatus.IMAGE_READY:
-            return
-        image_bytes = base64.b64decode(task.image_base64) if task.image_base64 else None
-        if not image_bytes:
-            manager.update(task_id, TaskStatus.FAILED, error="图片数据无效")
-            return
-        config = VideoConfig(prompt=prompt)
-        await run_video_pipeline(
-            config=config,
-            task_id=task_id,
-            state=manager,
-            video_service=video_service,
-            image_bytes=image_bytes,
-            is_cli_mode=is_cli_mode,
-        )
-    except Exception as e:
-        manager.update(task_id, TaskStatus.FAILED, error=f"生成失败: {e}")
 
 
 # ── Status / Download ──────────────────────────────────────────────────
@@ -319,6 +278,9 @@ async def status(task_id: str):
     task = manager.get(task_id)
     if task is None:
         raise HTTPException(404, "任务不存在或已过期")
+    current_elapsed = task.elapsed_seconds
+    if task.step_started_at > 0 and task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.IMAGE_READY):
+        current_elapsed = round(time.time() - task.step_started_at, 1)
     result = {
         "task_id": task.task_id,
         "status": task.status.value,
@@ -326,6 +288,8 @@ async def status(task_id: str):
         "progress_message": task.progress_message,
         "download_url": task.download_url,
         "error": task.error,
+        "elapsed_seconds": current_elapsed,
+        "progress_timeline": task.progress_timeline,
     }
     if task.status == TaskStatus.IMAGE_READY:
         result["image_base64"] = task.image_base64
