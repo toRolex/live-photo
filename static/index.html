@@ -366,7 +366,7 @@ function startImagePolling(taskId) {
         $('progress-fill').style.width = '100%';
         clearInterval(pollTimer);
         $('status-area').classList.remove('visible');
-        showImagePreview(taskId, data.image_base64);
+        showImagePreview(taskId, data.image_base64, data.video_prompt);
         $('submit-btn').disabled = false;
       } else if (data.status === 'failed') {
         clearInterval(pollTimer);
@@ -412,7 +412,7 @@ async function handleUploadSubmit() {
 
 // ── Image preview + actions ──
 
-function showImagePreview(taskId, imageBase64) {
+function showImagePreview(taskId, imageBase64, videoPrompt) {
   currentImageTaskId = taskId;
   $('preview-img').src = `data:image/png;base64,${imageBase64}`;
   $('preview-card').classList.add('visible');
@@ -420,8 +420,7 @@ function showImagePreview(taskId, imageBase64) {
   $('video-settings').style.display = '';
   $('preview-progress').style.display = 'none';
 
-  // Default video prompt to image prompt
-  $('video-prompt').value = imagePrompt;
+  $('video-prompt').value = videoPrompt || imagePrompt || '';
 }
 
 function saveImage() {
