@@ -322,6 +322,15 @@ function switchTab(tab) {
   $('error-text').textContent = '';
   $('status-area').classList.remove('visible');
   $('download-area').classList.remove('visible');
+  // 清理非当前 tab 的残留状态，防止预览卡片在上传模式下仍可见
+  if (tab !== 'text') {
+    $('preview-card').classList.remove('visible');
+    localStorage.removeItem(IMAGE_KEY);
+  } else {
+    $('upload-video-settings').classList.remove('visible');
+    $('preview-card').classList.remove('visible');
+    localStorage.removeItem(VIDEO_KEY);
+  }
 }
 
 function selectFile(file) {
@@ -373,6 +382,8 @@ function handleUploadLastFrameSelect(event) {
 function showUploadSettings() {
   if (!selectedFile) return alert('请先选择图片');
   $('upload-video-settings').classList.add('visible');
+  // 上传模式不应显示预览卡片
+  $('preview-card').classList.remove('visible');
 }
 
 // ── Text → Image ──
