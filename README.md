@@ -12,7 +12,17 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 安装系统依赖
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+```
+
+### 2. 安装 Python 依赖
 
 ```bash
 uv sync

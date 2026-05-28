@@ -1,22 +1,26 @@
 """FastAPI entry point — Live Photo Maker."""
 
 import asyncio
+import base64
 import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+
+load_dotenv()
+from fastapi.responses import HTMLResponse, Response  # noqa: E402
 
 from dedup import DEDUP_WINDOW, make_prompt_hash
-from pipeline import get_zip, run_pipeline
+from pipeline import cleanup_zips, get_zip, run_image_only, run_video_pipeline
 from services.gpt_image import GPTImageService
-from services.seedance import get_service
-from state import StateManager
+from services.seedance import APIMode, CLIMode, get_service
+from state import StateManager, TaskStatus
 
-# --- Configuration ---
 GPT_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GPT_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://wcnb.ai/v1")
 SEEDANCE_AK = os.getenv("SEEDANCE_ACCESS_KEY", "")
 SEEDANCE_SK = os.getenv("SEEDANCE_SECRET_KEY", "")
 
@@ -26,7 +30,7 @@ async def lifespan(app: FastAPI):
     if not GPT_API_KEY:
         print("WARNING: OPENAI_API_KEY not set. GPT image generation will fail.")
     app.state.manager = StateManager()
-    app.state.gpt = GPTImageService(GPT_API_KEY) if GPT_API_KEY else None
+    app.state.gpt = GPTImageService(GPT_API_KEY, GPT_BASE_URL) if GPT_API_KEY else None
     app.state.video_cli = get_service(mode="cli")
     app.state.video_api = get_service(
         mode="api",
@@ -36,16 +40,24 @@ async def lifespan(app: FastAPI):
     timer = asyncio.create_task(_cleanup_loop(app.state.manager))
     yield
     timer.cancel()
+    try:
+        await timer
+    except asyncio.CancelledError:
+        pass
+    if app.state.video_api and isinstance(app.state.video_api, APIMode):
+        await app.state.video_api._client.aclose()
+    if app.state.gpt:
+        await app.state.gpt._client.close()
 
 
 app = FastAPI(title="Live Photo Maker", lifespan=lifespan)
 
 
 async def _cleanup_loop(state_manager: StateManager):
-    """Periodically cleanup stale tasks."""
     while True:
         await asyncio.sleep(300)
         state_manager.cleanup_stale()
+        cleanup_zips(1800)
 
 
 @app.get("/")
@@ -53,8 +65,15 @@ async def index() -> HTMLResponse:
     return HTMLResponse((Path("static") / "index.html").read_text())
 
 
-@app.post("/api/generate")
-async def generate(request: Request):
+def _normalize_mode(raw: object, default: str = "cli") -> str:
+    if isinstance(raw, str) and raw in ("cli", "api"):
+        return raw
+    return default
+
+
+@app.post("/api/generate-image")
+async def generate_image(request: Request):
+    """Text → GPT image. Returns image as base64 in status."""
     body = await request.json()
     prompt = (body.get("prompt") or "").strip()
 
@@ -63,37 +82,165 @@ async def generate(request: Request):
     if len(prompt) > 500:
         raise HTTPException(400, "输入超过 500 字符限制")
 
-    # Frontend-selected mode: "cli" (default) or "api"
-    mode = body.get("mode", "cli")
-    if mode not in ("cli", "api"):
-        mode = "cli"
-    is_cli = mode == "cli"
+    if not app.state.gpt:
+        raise HTTPException(503, "图片生成服务未配置（缺少 OPENAI_API_KEY）")
 
     ip = request.client.host if request.client else "unknown"
     prompt_hash = make_prompt_hash(prompt)
-
     manager: StateManager = app.state.manager
 
-    # Dedup
     existing = manager.find_by_ip_prompt(ip, prompt_hash, DEDUP_WINDOW)
     if existing:
         return {"task_id": existing.task_id, "dedup": True}
 
     task_id = str(uuid.uuid4())
     try:
-        manager.create(task_id, ip, prompt_hash)
+        manager.create(task_id, ip, prompt, prompt_hash)
     except RuntimeError as e:
         raise HTTPException(503, str(e))
 
-    # Get video service based on frontend choice
-    video = app.state.video_cli if is_cli else app.state.video_api
-
-    # Fire pipeline in background
     asyncio.create_task(
-        run_pipeline(
+        run_image_only(
             prompt=prompt,
             task_id=task_id,
             state=manager,
+            gpt_service=app.state.gpt,
+        )
+    )
+
+    return {"task_id": task_id}
+
+
+@app.post("/api/generate-video")
+async def generate_video(request: Request):
+    """Continue with video generation using the image from a completed image task."""
+    body = await request.json()
+    task_id = (body.get("task_id") or "").strip()
+    mode = _normalize_mode(body.get("mode"))
+
+    if not task_id:
+        raise HTTPException(400, "缺少 task_id")
+
+    manager: StateManager = app.state.manager
+    task = manager.get(task_id)
+    if task is None:
+        raise HTTPException(404, "任务不存在或已过期")
+    if task.status != TaskStatus.IMAGE_READY:
+        raise HTTPException(400, f"当前状态不允许生成视频: {task.status.value}")
+    if not task.image_base64:
+        raise HTTPException(400, "没有可用的图片数据")
+
+    image_bytes = base64.b64decode(task.image_base64)
+    is_cli = mode == "cli"
+    video = app.state.video_cli if is_cli else app.state.video_api
+    if video is None:
+        raise HTTPException(503, "视频生成服务未配置")
+
+    asyncio.create_task(
+        run_video_pipeline(
+            prompt=task.prompt,
+            task_id=task_id,
+            state=manager,
+            video_service=video,
+            image_bytes=image_bytes,
+            is_cli_mode=is_cli,
+        )
+    )
+
+    return {"task_id": task_id}
+
+
+# ── Upload image → video ───────────────────────────────────────────────
+
+
+@app.post("/api/upload-and-generate")
+async def upload_and_generate(request: Request):
+    """Upload an image → generate video + package live photo."""
+    form = await request.form()
+    raw = form.get("file")
+    file = raw if hasattr(raw, "filename") and hasattr(raw, "read") else None
+    mode = _normalize_mode(form.get("mode"), default="api")
+
+    if not file or not file.filename:
+        raise HTTPException(400, "请上传图片文件")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(400, "图片文件不能超过 20MB")
+
+    ip = request.client.host if request.client else "unknown"
+    manager: StateManager = app.state.manager
+
+    task_id = str(uuid.uuid4())
+    try:
+        manager.create(task_id, ip, "", "")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    is_cli = mode == "cli"
+    video = app.state.video_cli if is_cli else app.state.video_api
+    if video is None:
+        raise HTTPException(503, "视频生成服务未配置")
+
+    manager.update(task_id, TaskStatus.GENERATING_VIDEO, progress_message="已上传图片，正在生成视频…")
+
+    asyncio.create_task(
+        run_video_pipeline(
+            prompt="",
+            task_id=task_id,
+            state=manager,
+            video_service=video,
+            image_bytes=image_bytes,
+            is_cli_mode=is_cli,
+        )
+    )
+
+    return {"task_id": task_id}
+
+
+# ── One-shot (legacy compatibility) ────────────────────────────────────
+
+
+@app.post("/api/generate")
+async def generate(request: Request):
+    """Legacy one-shot: text → image → video → package."""
+    body = await request.json()
+    prompt = (body.get("prompt") or "").strip()
+
+    if not prompt:
+        raise HTTPException(400, "输入不能为空")
+    if len(prompt) > 500:
+        raise HTTPException(400, "输入超过 500 字符限制")
+
+    mode = _normalize_mode(body.get("mode"))
+    is_cli = mode == "cli"
+
+    if not app.state.gpt:
+        raise HTTPException(503, "图片生成服务未配置（缺少 OPENAI_API_KEY）")
+
+    ip = request.client.host if request.client else "unknown"
+    prompt_hash = make_prompt_hash(prompt)
+    manager: StateManager = app.state.manager
+
+    existing = manager.find_by_ip_prompt(ip, prompt_hash, DEDUP_WINDOW)
+    if existing:
+        return {"task_id": existing.task_id, "dedup": True}
+
+    task_id = str(uuid.uuid4())
+    try:
+        manager.create(task_id, ip, prompt, prompt_hash)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    video = app.state.video_cli if is_cli else app.state.video_api
+    if video is None:
+        raise HTTPException(503, "视频生成服务未配置")
+
+    asyncio.create_task(
+        _run_one_shot(
+            prompt=prompt,
+            task_id=task_id,
+            manager=manager,
             gpt_service=app.state.gpt,
             video_service=video,
             is_cli_mode=is_cli,
@@ -103,13 +250,46 @@ async def generate(request: Request):
     return {"task_id": task_id}
 
 
+async def _run_one_shot(
+    prompt: str,
+    task_id: str,
+    manager: StateManager,
+    gpt_service: GPTImageService,
+    video_service: APIMode | CLIMode,
+    is_cli_mode: bool,
+) -> None:
+    """One-shot: generate image then immediately continue to video."""
+    try:
+        await run_image_only(prompt, task_id, manager, gpt_service)
+        task = manager.get(task_id)
+        if task is None or task.status != TaskStatus.IMAGE_READY:
+            return
+        image_bytes = base64.b64decode(task.image_base64) if task.image_base64 else None
+        if not image_bytes:
+            manager.update(task_id, TaskStatus.FAILED, error="图片数据无效")
+            return
+        await run_video_pipeline(
+            prompt=prompt,
+            task_id=task_id,
+            state=manager,
+            video_service=video_service,
+            image_bytes=image_bytes,
+            is_cli_mode=is_cli_mode,
+        )
+    except Exception as e:
+        manager.update(task_id, TaskStatus.FAILED, error=f"生成失败: {e}")
+
+
+# ── Status / Download ──────────────────────────────────────────────────
+
+
 @app.get("/api/status/{task_id}")
 async def status(task_id: str):
     manager: StateManager = app.state.manager
     task = manager.get(task_id)
     if task is None:
         raise HTTPException(404, "任务不存在或已过期")
-    return {
+    result = {
         "task_id": task.task_id,
         "status": task.status.value,
         "step_index": task.step_index,
@@ -117,6 +297,9 @@ async def status(task_id: str):
         "download_url": task.download_url,
         "error": task.error,
     }
+    if task.status == TaskStatus.IMAGE_READY:
+        result["image_base64"] = task.image_base64
+    return result
 
 
 @app.get("/api/download/{task_id}")

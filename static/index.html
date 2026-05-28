@@ -15,37 +15,71 @@ body {
   padding: 40px 20px;
 }
 h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 8px; }
-.subtitle { text-align: center; color: #86868b; font-size: 14px; margin-bottom: 32px; }
+.subtitle { text-align: center; color: #86868b; font-size: 14px; margin-bottom: 24px; }
+
+/* ── Mode toggle ── */
 .mode-toggle {
   display: flex; justify-content: center; gap: 8px; margin-bottom: 24px;
 }
 .mode-btn {
   padding: 6px 16px; border: 1px solid #d2d2d7; border-radius: 20px;
-  background: #fff; font-size: 13px; cursor: pointer; color: #86868b;
-  transition: all 0.2s;
+  background: #fff; font-size: 13px; cursor: pointer; color: #86868b; transition: all 0.2s;
 }
 .mode-btn.active { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
-.steps {
-  display: flex; gap: 16px; justify-content: center; margin-bottom: 32px;
+
+/* ── Tab switcher ── */
+.tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
+.tab {
+  flex: 1; text-align: center; padding: 12px 0; font-size: 14px; color: #86868b;
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
 }
-.step {
-  text-align: center; flex: 1; padding: 16px;
-  background: #fff; border-radius: 12px; font-size: 13px; color: #86868b;
-}
-.step .num { font-size: 24px; font-weight: 600; color: #1d1d1f; display: block; margin-bottom: 4px; }
-.input-area { display: flex; gap: 8px; margin-bottom: 24px; }
+.tab.active { color: #1d1d1f; border-bottom-color: #1d1d1f; font-weight: 500; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Input area ── */
+.input-area { display: flex; gap: 8px; margin-bottom: 16px; }
 textarea {
   flex: 1; padding: 12px 16px; border: 1px solid #d2d2d7; border-radius: 10px;
   font-size: 15px; resize: none; height: 48px; font-family: inherit;
   outline: none; transition: border-color 0.2s;
 }
 textarea:focus { border-color: #1d1d1f; }
-button {
+.btn-primary {
   padding: 0 20px; background: #1d1d1f; color: #fff; border: none;
   border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer;
   white-space: nowrap; transition: opacity 0.2s;
 }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Upload zone ── */
+.upload-zone {
+  border: 2px dashed #d2d2d7; border-radius: 12px; padding: 32px 20px;
+  text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 16px;
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: #1d1d1f; }
+.upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+.upload-zone .hint { font-size: 13px; color: #86868b; }
+.upload-zone input[type=file] { display: none; }
+.upload-zone .filename { font-size: 14px; color: #1d1d1f; margin-top: 8px; }
+
+/* ── Image preview ── */
+.preview-card {
+  background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; display: none;
+}
+.preview-card.visible { display: block; }
+.preview-card img {
+  width: 100%; border-radius: 8px; margin-bottom: 12px; display: block;
+}
+.preview-actions { display: flex; gap: 8px; }
+.btn-secondary {
+  flex: 1; padding: 10px 0; background: #f5f5f7; color: #1d1d1f; border: 1px solid #d2d2d7;
+  border-radius: 10px; font-size: 14px; font-weight: 500; cursor: pointer; text-align: center;
+  transition: all 0.2s;
+}
+.btn-secondary:hover { background: #e8e8ed; }
+
+/* ── Status area ── */
 #status-area {
   background: #fff; border-radius: 12px; padding: 20px;
   display: none; margin-bottom: 16px;
@@ -60,6 +94,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 #status-text { font-size: 14px; color: #1d1d1f; }
 #error-text { color: #ff3b30; font-size: 14px; margin-bottom: 12px; }
+
+/* ── Download area ── */
 #download-area { text-align: center; display: none; }
 #download-area.visible { display: block; }
 #download-area a {
@@ -72,40 +108,68 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 <body>
 
 <h1>Live Photo Maker</h1>
-<p class="subtitle">输入文字描述，5 分钟后得到 Live Photo</p>
+<p class="subtitle">输入文字描述或上传图片，一键生成 Live Photo</p>
 
 <div class="mode-toggle">
-  <button class="mode-btn active" data-mode="cli" onclick="setMode('cli')">CLI 模式</button>
-  <button class="mode-btn" data-mode="api" onclick="setMode('api')">API 模式</button>
+  <button class="mode-btn" data-mode="cli" onclick="setMode('cli')">CLI 模式</button>
+  <button class="mode-btn active" data-mode="api" onclick="setMode('api')">API 模式</button>
 </div>
 
-<div class="steps">
-  <div class="step"><span class="num">1</span>输入描述</div>
-  <div class="step"><span class="num">2</span>等待生成</div>
-  <div class="step"><span class="num">3</span>下载文件</div>
+<div class="tab-bar">
+  <div class="tab active" data-tab="text" onclick="switchTab('text')">文生图</div>
+  <div class="tab" data-tab="upload" onclick="switchTab('upload')">上传图片</div>
 </div>
 
-<div class="input-area">
-  <textarea id="prompt" placeholder="例如：一只戴墨镜的橘猫坐在沙滩上晒太阳" maxlength="500"></textarea>
-  <button id="submit-btn" onclick="handleSubmit()">生成</button>
+<!-- Text-to-Image panel -->
+<div class="tab-panel active" id="panel-text">
+  <div class="input-area">
+    <textarea id="prompt" placeholder="例如：一只戴墨镜的橘猫坐在沙滩上晒太阳" maxlength="500"></textarea>
+    <button class="btn-primary" id="submit-btn" onclick="handleTextSubmit()">生成图片</button>
+  </div>
 </div>
 
+<!-- Upload panel -->
+<div class="tab-panel" id="panel-upload">
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📁</div>
+    <div class="hint">点击或拖拽图片到这里（支持 JPG/PNG/HEIC，最大 20MB）</div>
+    <div class="filename" id="upload-filename"></div>
+    <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(event)">
+  </div>
+  <button class="btn-primary" id="upload-btn" style="width:100%" disabled onclick="handleUploadSubmit()">生成 Live Photo</button>
+</div>
+
+<!-- Image preview card -->
+<div class="preview-card" id="preview-card">
+  <img id="preview-img" src="" alt="生成的图片">
+  <div class="preview-actions">
+    <button class="btn-secondary" onclick="saveImage()">保存图片</button>
+    <button class="btn-primary" style="flex:1" onclick="continueToVideo()">继续生成 Live Photo</button>
+  </div>
+</div>
+
+<!-- Status area -->
 <div id="status-area" aria-live="polite">
   <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
   <div id="status-text"></div>
   <div id="error-text"></div>
 </div>
 
+<!-- Download area -->
 <div id="download-area">
   <a id="download-link" href="#">下载 Live Photo</a>
 </div>
 
 <script>
 const POLL_INTERVAL = 3000;
-const STORAGE_KEY = 'lpm_task_id';
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const IMAGE_KEY = 'lpm_image_task';
+const VIDEO_KEY = 'lpm_video_task';
 
 let pollTimer = null;
-let currentMode = 'cli';
+let currentMode = 'api';
+let currentImageTaskId = null;
+let selectedFile = null;
 
 function $(id) { return document.getElementById(id); }
 
@@ -116,7 +180,39 @@ function setMode(mode) {
   });
 }
 
-async function handleSubmit() {
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
+  $('error-text').textContent = '';
+  $('status-area').classList.remove('visible');
+  $('download-area').classList.remove('visible');
+}
+
+function selectFile(file) {
+  if (!file) return;
+  if (file.size > MAX_FILE_SIZE) { alert(`图片不能超过 ${MAX_FILE_SIZE / 1024 / 1024}MB`); return; }
+  selectedFile = file;
+  $('upload-filename').textContent = file.name;
+  $('upload-btn').disabled = false;
+}
+
+function handleFileSelect(event) {
+  selectFile(event.target.files[0]);
+}
+
+// Drag & drop
+const uploadZone = $('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  selectFile(e.dataTransfer.files[0]);
+});
+
+// ── Text → Image ──
+
+async function handleTextSubmit() {
   const prompt = $('prompt').value.trim();
   if (!prompt) return alert('请输入描述');
   if (prompt.length > 500) return alert('超过 500 字符限制');
@@ -125,10 +221,10 @@ async function handleSubmit() {
   btn.disabled = true;
 
   try {
-    const resp = await fetch('/api/generate', {
+    const resp = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, mode: currentMode }),
+      body: JSON.stringify({ prompt }),
     });
     if (!resp.ok) {
       const err = await resp.json();
@@ -137,18 +233,18 @@ async function handleSubmit() {
       return;
     }
     const data = await resp.json();
-    localStorage.setItem(STORAGE_KEY, data.task_id);
-    startPolling(data.task_id);
+    currentImageTaskId = data.task_id;
+    localStorage.setItem(IMAGE_KEY, data.task_id);
+    startImagePolling(data.task_id);
   } catch (e) {
     alert('网络错误，请重试');
     btn.disabled = false;
   }
 }
 
-function startPolling(taskId) {
+function startImagePolling(taskId) {
   $('status-area').classList.add('visible');
-  $('download-area').classList.remove('visible');
-
+  $('error-text').textContent = '';
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try {
@@ -159,33 +255,141 @@ function startPolling(taskId) {
       $('status-text').textContent = data.progress_message || data.status;
 
       if (data.status === 'generating_image') {
-        $('progress-fill').style.width = '33%';
-      } else if (data.status === 'generating_video') {
-        $('progress-fill').style.width = '66%';
+        $('progress-fill').style.width = '50%';
+      } else if (data.status === 'image_ready') {
+        $('progress-fill').style.width = '100%';
+        clearInterval(pollTimer);
+        $('status-area').classList.remove('visible');
+        showImagePreview(taskId, data.image_base64);
+        $('submit-btn').disabled = false;
+      } else if (data.status === 'failed') {
+        clearInterval(pollTimer);
+        $('error-text').textContent = data.error || '生成失败，请重试';
+        localStorage.removeItem(IMAGE_KEY);
+        $('submit-btn').disabled = false;
+      }
+    } catch (e) { /* continue */ }
+  }, POLL_INTERVAL);
+}
+
+// ── Upload → Video ──
+
+async function handleUploadSubmit() {
+  if (!selectedFile) return alert('请先选择图片');
+
+  const btn = $('upload-btn');
+  btn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('mode', currentMode);
+
+    const resp = await fetch('/api/upload-and-generate', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      alert(err.detail || '请求失败');
+      btn.disabled = false;
+      return;
+    }
+    const data = await resp.json();
+    localStorage.setItem(VIDEO_KEY, data.task_id);
+    startVideoPolling(data.task_id, () => { btn.disabled = false; });
+  } catch (e) {
+    alert('网络错误，请重试');
+    btn.disabled = false;
+  }
+}
+
+// ── Image preview + actions ──
+
+function showImagePreview(taskId, imageBase64) {
+  currentImageTaskId = taskId;
+  $('preview-img').src = `data:image/png;base64,${imageBase64}`;
+  $('preview-card').classList.add('visible');
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `livephoto_${Date.now()}.png`;
+  link.href = $('preview-img').src;
+  link.click();
+}
+
+function continueToVideo() {
+  if (!currentImageTaskId) return;
+  $('preview-card').classList.remove('visible');
+
+  fetch('/api/generate-video', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: currentImageTaskId, mode: currentMode }),
+  }).then(r => {
+    if (!r.ok) return r.json().then(err => { throw new Error(err.detail || '请求失败'); });
+    return r.json();
+  }).then(data => {
+    if (data.task_id) {
+      localStorage.setItem(VIDEO_KEY, data.task_id);
+      startVideoPolling(data.task_id, () => {});
+    }
+  }).catch(e => {
+    $('error-text').textContent = e.message;
+    $('status-area').classList.add('visible');
+  });
+}
+
+// ── Video polling ──
+
+function startVideoPolling(taskId, onDone) {
+  $('status-area').classList.add('visible');
+  $('download-area').classList.remove('visible');
+  $('error-text').textContent = '';
+
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/status/${taskId}`);
+      if (!resp.ok) { clearInterval(pollTimer); return; }
+      const data = await resp.json();
+
+      $('status-text').textContent = data.progress_message || data.status;
+
+      if (data.status === 'generating_video') {
+        $('progress-fill').style.width = '50%';
       } else if (data.status === 'packaging') {
-        $('progress-fill').style.width = '90%';
+        $('progress-fill').style.width = '80%';
       } else if (data.status === 'done') {
         $('progress-fill').style.width = '100%';
         clearInterval(pollTimer);
         $('status-area').classList.remove('visible');
         $('download-area').classList.add('visible');
         $('download-link').href = data.download_url || `/api/download/${taskId}`;
-        localStorage.removeItem(STORAGE_KEY);
-        $('submit-btn').disabled = false;
+        localStorage.removeItem(VIDEO_KEY);
+        localStorage.removeItem(IMAGE_KEY);
+        onDone();
       } else if (data.status === 'failed') {
         clearInterval(pollTimer);
         $('error-text').textContent = data.error || '生成失败，请重试';
-        localStorage.removeItem(STORAGE_KEY);
-        $('submit-btn').disabled = false;
+        localStorage.removeItem(VIDEO_KEY);
+        onDone();
       }
-    } catch (e) { /* polling continues */ }
+    } catch (e) { /* continue */ }
   }, POLL_INTERVAL);
 }
 
-// Recover from previous session
+// ── Session recovery ──
+
 window.addEventListener('DOMContentLoaded', () => {
-  const savedTask = localStorage.getItem(STORAGE_KEY);
-  if (savedTask) startPolling(savedTask);
+  const savedImage = localStorage.getItem(IMAGE_KEY);
+  const savedVideo = localStorage.getItem(VIDEO_KEY);
+  if (savedVideo) {
+    startVideoPolling(savedVideo, () => {});
+  } else if (savedImage) {
+    startImagePolling(savedImage);
+  }
 });
 </script>
 

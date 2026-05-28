@@ -10,11 +10,23 @@ dependencies = [
     "pillow-heif>=0.20.0",
     "pydantic>=2.10.0",
     "python-multipart>=0.0.12",
+    "python-dotenv>=1.2.2",
+    "socksio>=1.0.0",
 ]
 
 [tool.ruff]
 line-length = 120
 target-version = "py312"
 
+[[tool.uv.index]]
+url = "http://mirrors.aliyun.com/pypi/simple/"
+
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true

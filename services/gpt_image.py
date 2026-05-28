@@ -1,26 +1,39 @@
-"""GPT-image-2 API wrapper."""
+"""GPT-image-2 API wrapper via OpenAI-compatible Chat Completions proxy."""
 
 import base64
+import binascii
+import re
 
 from openai import AsyncOpenAI
 
 
 class GPTImageService:
-    def __init__(self, api_key: str) -> None:
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str, base_url: str = "https://wcnb.ai/v1") -> None:
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     async def generate(self, prompt: str) -> bytes:
-        """Generate an image from text prompt. Returns PNG bytes."""
-        response = await self._client.images.generate(
-            model="gpt-image-2",
-            prompt=prompt,
-            size="1024x1024",
-            n=1,
-            response_format="b64_json",
+        """Generate an image via Chat Completions streaming. Returns PNG bytes."""
+        stream = await self._client.chat.completions.create(
+            model="gpt-image-2-all",
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
         )
-        if not response.data:
-            raise RuntimeError("GPT image generation returned no data")
-        b64 = response.data[0].b64_json
-        if b64 is None:
-            raise RuntimeError("GPT image generation returned empty response")
-        return base64.b64decode(b64)
+
+        content_parts: list[str] = []
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                content_parts.append(delta.content)
+
+        full_content = "".join(content_parts)
+
+        b64_match = re.search(r"data:image/\w+;base64,([A-Za-z0-9+/=]+)", full_content)
+        if b64_match:
+            return base64.b64decode(b64_match.group(1))
+
+        try:
+            return base64.b64decode(full_content)
+        except (ValueError, binascii.Error):
+            pass
+
+        raise RuntimeError(f"GPT response does not contain valid image data: {full_content[:200]}")

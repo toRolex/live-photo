@@ -9,6 +9,7 @@ from enum import Enum
 class TaskStatus(str, Enum):
     QUEUED = "queued"
     GENERATING_IMAGE = "generating_image"
+    IMAGE_READY = "image_ready"
     GENERATING_VIDEO = "generating_video"
     PACKAGING = "packaging"
     DONE = "done"
@@ -25,7 +26,9 @@ class Task:
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     ip: str = ""
+    prompt: str = ""
     prompt_hash: str = ""
+    image_base64: str | None = None
 
 
 MAX_CONCURRENT = 10
@@ -45,18 +48,23 @@ class StateManager:
                 if t.status not in (TaskStatus.DONE, TaskStatus.FAILED)
             )
 
-    def create(self, task_id: str, ip: str, prompt_hash: str) -> Task:
-        if self.active_count >= MAX_CONCURRENT:
-            raise RuntimeError("Service is busy. Please try again later.")
-        task = Task(
-            task_id=task_id,
-            status=TaskStatus.QUEUED,
-            step_index="0/3",
-            progress_message="正在排队…",
-            ip=ip,
-            prompt_hash=prompt_hash,
-        )
+    def create(self, task_id: str, ip: str, prompt: str, prompt_hash: str) -> Task:
         with self._lock:
+            active = sum(
+                1 for t in self._tasks.values()
+                if t.status not in (TaskStatus.DONE, TaskStatus.FAILED)
+            )
+            if active >= MAX_CONCURRENT:
+                raise RuntimeError("Service is busy. Please try again later.")
+            task = Task(
+                task_id=task_id,
+                status=TaskStatus.QUEUED,
+                step_index="0/3",
+                progress_message="正在排队…",
+                ip=ip,
+                prompt=prompt,
+                prompt_hash=prompt_hash,
+            )
             self._tasks[task_id] = task
         return task
 
@@ -68,6 +76,7 @@ class StateManager:
         progress_message: str = "",
         download_url: str | None = None,
         error: str | None = None,
+        image_base64: str | None = None,
     ) -> Task | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -82,6 +91,8 @@ class StateManager:
             task.download_url = download_url
         if error:
             task.error = error
+        if image_base64 is not None:
+            task.image_base64 = image_base64
         return task
 
     def get(self, task_id: str) -> Task | None:
@@ -102,14 +113,15 @@ class StateManager:
         return None
 
     def cleanup_stale(self, ttl: int = 1800) -> int:
-        """Remove completed tasks older than TTL seconds."""
+        """Remove completed/failed tasks older than TTL seconds."""
         cutoff = time.time() - ttl
-        to_remove = [
-            tid
-            for tid, t in self._tasks.items()
-            if t.created_at < cutoff
-        ]
         with self._lock:
+            to_remove = [
+                tid
+                for tid, t in self._tasks.items()
+                if t.created_at < cutoff
+                and t.status in (TaskStatus.DONE, TaskStatus.FAILED)
+            ]
             for tid in to_remove:
                 del self._tasks[tid]
         return len(to_remove)

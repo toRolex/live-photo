@@ -1,44 +1,94 @@
 """即梦视频生成 — API 模式 + CLI 模式双适配."""
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
+import httpx
+
+
+def _sign_v4(access_key: str, secret_key: str, method: str, path: str,
+             query: str, body: str, x_date: str) -> str:
+    """Volcengine SignV4 (HMAC-SHA256) for cn-north-1 / cv service."""
+    host = "visual.volcengineapi.com"
+    signed_headers = "content-type;host;x-date"
+    hashed_body = hashlib.sha256(body.encode()).hexdigest()
+
+    canonical = (
+        f"{method}\n{path}\n{query}\n"
+        f"content-type:application/json\n"
+        f"host:{host}\n"
+        f"x-date:{x_date}\n\n"
+        f"{signed_headers}\n{hashed_body}"
+    )
+    algorithm = "HMAC-SHA256"
+    date_tag = x_date[:8]
+    credential_scope = f"{date_tag}/cn-north-1/cv/request"
+    hashed_canonical = hashlib.sha256(canonical.encode()).hexdigest()
+    string_to_sign = f"{algorithm}\n{x_date}\n{credential_scope}\n{hashed_canonical}"
+
+    k_date = hmac.new(secret_key.encode(), date_tag.encode(), hashlib.sha256).digest()
+    k_region = hmac.new(k_date, b"cn-north-1", hashlib.sha256).digest()
+    k_service = hmac.new(k_region, b"cv", hashlib.sha256).digest()
+    k_signing = hmac.new(k_service, b"request", hashlib.sha256).digest()
+    signature = hmac.new(k_signing, string_to_sign.encode(), hashlib.sha256).hexdigest()
+
+    return (
+        f"{algorithm} "
+        f"Credential={access_key}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, "
+        f"Signature={signature}"
+    )
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
 
 class APIMode:
-    """火山引擎 CVSync2AsyncSubmitTask / CVSync2AsyncGetResult."""
+    """火山引擎 CVSync2AsyncSubmitTask / CVSync2AsyncGetResult — 即梦视频生成 3.0."""
 
     ENDPOINT = "https://visual.volcengineapi.com"
+    REQ_KEY = "jimeng_i2v_first_v30"
 
     def __init__(self, access_key: str, secret_key: str) -> None:
         self._ak = access_key
         self._sk = secret_key
+        self._client = httpx.AsyncClient(timeout=120)
 
-    async def submit(self, image_url: str, prompt: str = "", aspect_ratio: str = "16:9") -> str:
+    async def submit(self, image_bytes: bytes, prompt: str = "") -> str:
         """Submit image-to-video task, return task_id."""
         query = urlencode({
             "Action": "CVSync2AsyncSubmitTask",
             "Version": "2022-08-31",
         })
-
         body = json.dumps({
-            "req_key": "jimeng_vgfm_i2v_l20",
-            "image_urls": [image_url],
-            "prompt": prompt[:150],
-            "aspect_ratio": aspect_ratio,
+            "req_key": self.REQ_KEY,
+            "binary_data_base64": [base64.b64encode(image_bytes).decode()],
+            "prompt": prompt[:800],
+            "seed": -1,
+            "frames": 121,
         })
 
-        # Simplified: in production, use volcengine-python-sdk for signing
-        import httpx
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self.ENDPOINT}?{query}",
-                headers={"Content-Type": "application/json"},
-                content=body,
-                timeout=30,
-            )
+        x_date = _now_utc()
+        auth = _sign_v4(self._ak, self._sk, "POST", "/", query, body, x_date)
+
+        resp = await self._client.post(
+            f"{self.ENDPOINT}?{query}",
+            headers={
+                "Content-Type": "application/json",
+                "Host": "visual.volcengineapi.com",
+                "X-Date": x_date,
+                "Authorization": auth,
+            },
+            content=body,
+        )
         data = resp.json()
         if data.get("code") != 10000:
             raise RuntimeError(f"Seedance API error: {data}")
@@ -46,8 +96,6 @@ class APIMode:
 
     async def poll(self, task_id: str, interval: int = 5, timeout: int = 600) -> str:
         """Poll until task is done, return video_url."""
-        import httpx
-
         query = urlencode({
             "Action": "CVSync2AsyncGetResult",
             "Version": "2022-08-31",
@@ -55,22 +103,28 @@ class APIMode:
 
         deadline = time.time() + timeout
         while time.time() < deadline:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.ENDPOINT}?{query}",
-                    headers={"Content-Type": "application/json"},
-                    content=json.dumps({
-                        "req_key": "jimeng_vgfm_i2v_l20",
-                        "task_id": task_id,
-                    }),
-                    timeout=30,
-                )
+            body = json.dumps({"req_key": self.REQ_KEY, "task_id": task_id})
+            x_date = _now_utc()
+            auth = _sign_v4(self._ak, self._sk, "POST", "/", query, body, x_date)
+
+            resp = await self._client.post(
+                f"{self.ENDPOINT}?{query}",
+                headers={
+                    "Content-Type": "application/json",
+                    "Host": "visual.volcengineapi.com",
+                    "X-Date": x_date,
+                    "Authorization": auth,
+                },
+                content=body,
+            )
             data = resp.json()
             if data.get("code") != 10000:
                 raise RuntimeError(f"Seedance poll error: {data}")
             status = data["data"].get("status")
             if status == "done":
                 return data["data"]["video_url"]
+            if status == "failed":
+                raise RuntimeError(f"Seedance task failed: {data['data']}")
             await asyncio.sleep(interval)
         raise TimeoutError("Seedance video generation timed out")
 
@@ -92,7 +146,7 @@ class CLIMode:
             "--poll", str(self._poll),
         ]
         if prompt:
-            cmd += ["--prompt", prompt[:150]]
+            cmd += ["--prompt", prompt[:800]]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
