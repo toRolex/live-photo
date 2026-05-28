@@ -17,6 +17,7 @@ from state import StateManager, TaskStatus
 OUTPUT_DIR = Path("output")
 IMAGE_DIR = OUTPUT_DIR / "images"
 VIDEO_DIR = OUTPUT_DIR / "videos"
+LIVE_PHOTO_DIR = OUTPUT_DIR / "live_photos"
 
 
 def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
@@ -110,6 +111,19 @@ async def run_video_pipeline(
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.write(mov_path, arcname=mov_path.name)
                 zf.write(heic_path, arcname=heic_path.name)
+
+            # Save Live Photo files to disk
+            LIVE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+            safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (config.prompt or "live_photo")[:30])
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            saved_mov = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.mov"
+            saved_heic = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.heic"
+            saved_zip = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.zip"
+            saved_mov.write_bytes(mov_path.read_bytes())
+            saved_heic.write_bytes(heic_path.read_bytes())
+            saved_zip.write_bytes(zip_path.read_bytes())
+            print(f"[SAVE] Live Photo saved to {saved_mov.parent}")
+
             state.update(
                 task_id,
                 TaskStatus.DONE,

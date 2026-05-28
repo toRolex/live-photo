@@ -63,6 +63,16 @@ textarea:focus { border-color: #1d1d1f; }
 .upload-zone input[type=file] { display: none; }
 .upload-zone .filename { font-size: 14px; color: #1d1d1f; margin-top: 8px; }
 
+/* ── Upload video settings ── */
+.upload-video-settings {
+  display: none;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.upload-video-settings.visible { display: block; }
+
 /* ── Image preview ── */
 .preview-card {
   background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; display: none;
@@ -189,7 +199,39 @@ textarea:focus { border-color: #1d1d1f; }
     <div class="filename" id="upload-filename"></div>
     <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(event)">
   </div>
-  <button class="btn-primary" id="upload-btn" style="width:100%" disabled onclick="handleUploadSubmit()">生成 Live Photo</button>
+  <button class="btn-primary" id="upload-btn" style="width:100%" disabled onclick="showUploadSettings()">设置参数并生成</button>
+</div>
+
+<!-- Upload video settings -->
+<div class="upload-video-settings" id="upload-video-settings">
+  <div class="video-settings-body">
+    <label for="upload-video-prompt">视频提示词</label>
+    <textarea id="upload-video-prompt" maxlength="800" placeholder="描述视频中的动态效果"></textarea>
+    <p class="hint-text">建议400字以内</p>
+
+    <div class="row">
+      <div>
+        <label for="upload-video-frames">时长</label>
+        <select id="upload-video-frames">
+          <option value="121">5 秒</option>
+          <option value="241">10 秒</option>
+        </select>
+      </div>
+      <div>
+        <label for="upload-video-seed">随机种子</label>
+        <input type="number" id="upload-video-seed" value="-1" min="-1" max="999999">
+        <p class="hint-text">-1=随机，相同种子+相同参数=相同视频</p>
+      </div>
+    </div>
+
+    <label>尾帧图片（可选）</label>
+    <div class="last-frame-zone" onclick="document.getElementById('upload-last-frame-input').click()">
+      <div id="upload-last-frame-label">点击上传尾帧图片（PNG/JPG）</div>
+      <input type="file" id="upload-last-frame-input" accept="image/png,image/jpeg" onchange="handleUploadLastFrameSelect(event)">
+    </div>
+
+    <button class="btn-continue" onclick="handleUploadSubmit()">开始生成 Live Photo</button>
+  </div>
 </div>
 
 <!-- Image preview card -->
@@ -262,6 +304,7 @@ let currentMode = 'api';
 let currentImageTaskId = null;
 let selectedFile = null;
 let lastFrameB64 = null;
+let uploadLastFrameB64 = null;
 let imagePrompt = '';
 
 function $(id) { return document.getElementById(id); }
@@ -313,6 +356,23 @@ function handleLastFrameSelect(event) {
     $('last-frame-label').textContent = `已选择: ${file.name}`;
   };
   reader.readAsDataURL(file);
+}
+
+function handleUploadLastFrameSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 4.7 * 1024 * 1024) { alert('尾帧图片不能超过 4.7MB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    uploadLastFrameB64 = reader.result.split(',')[1];
+    $('upload-last-frame-label').textContent = `已选择: ${file.name}`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function showUploadSettings() {
+  if (!selectedFile) return alert('请先选择图片');
+  $('upload-video-settings').classList.add('visible');
 }
 
 // ── Text → Image ──
@@ -385,11 +445,24 @@ async function handleUploadSubmit() {
 
   const btn = $('upload-btn');
   btn.disabled = true;
+  $('upload-video-settings').classList.remove('visible');
+
+  // Show status area for progress
+  $('status-area').classList.add('visible');
+  $('error-text').textContent = '';
+  $('status-text').textContent = '已上传图片，正在生成视频…';
+  $('progress-fill').style.width = '25%';
 
   try {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('mode', currentMode);
+    formData.append('video_prompt', $('upload-video-prompt').value);
+    formData.append('video_frames', $('upload-video-frames').value);
+    formData.append('video_seed', $('upload-video-seed').value);
+    if (uploadLastFrameB64) {
+      formData.append('last_frame_base64', uploadLastFrameB64);
+    }
 
     const resp = await fetch('/api/upload-and-generate', {
       method: 'POST',
@@ -403,7 +476,15 @@ async function handleUploadSubmit() {
     }
     const data = await resp.json();
     localStorage.setItem(VIDEO_KEY, data.task_id);
-    startVideoPolling(data.task_id, () => { btn.disabled = false; });
+    startVideoPolling(data.task_id, () => {
+      btn.disabled = false;
+      // Reset upload state
+      selectedFile = null;
+      uploadLastFrameB64 = null;
+      $('upload-filename').textContent = '';
+      $('upload-video-prompt').value = '';
+      $('upload-last-frame-label').textContent = '点击上传尾帧图片（PNG/JPG）';
+    });
   } catch (e) {
     alert('网络错误，请重试');
     btn.disabled = false;
