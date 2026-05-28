@@ -10,7 +10,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 
-load_dotenv()
+load_dotenv(override=True)
+# Remove proxy env vars entirely (not just empty) — httpx treats empty string as proxy URL
+for _k in ("https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "all_proxy"):
+    os.environ.pop(_k, None)
 from fastapi.responses import HTMLResponse, Response  # noqa: E402
 
 from dedup import DEDUP_WINDOW, make_prompt_hash
@@ -47,7 +50,7 @@ async def lifespan(app: FastAPI):
     if app.state.video_api and isinstance(app.state.video_api, APIMode):
         await app.state.video_api._client.aclose()
     if app.state.gpt:
-        await app.state.gpt._client.close()
+        await app.state.gpt.close()
 
 
 app = FastAPI(title="Live Photo Maker", lifespan=lifespan)

@@ -27,3 +27,10 @@ uv.lock
 
 # Build
 *.egg-info/
+
+# Generated images
+output/
+
+# GSD
+after-wait.yaml
+state.yaml

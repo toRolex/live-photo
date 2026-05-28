@@ -4,6 +4,7 @@ import base64
 import tempfile
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from httpx import AsyncClient
@@ -12,6 +13,19 @@ from services.gpt_image import GPTImageService
 from services.livephoto import make_livephoto
 from services.seedance import APIMode, CLIMode
 from state import StateManager, TaskStatus
+
+OUTPUT_DIR = Path("output")
+
+
+def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
+    """Save generated image to output/ directory. Returns saved file path."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in prompt[:30])
+    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.png"
+    filepath = OUTPUT_DIR / filename
+    filepath.write_bytes(image_bytes)
+    return filepath
 
 
 async def run_image_only(
@@ -24,6 +38,8 @@ async def run_image_only(
     state.update(task_id, TaskStatus.GENERATING_IMAGE, "1/2", "正在生成图片…")
     try:
         image_bytes = await gpt_service.generate(prompt)
+        saved_path = _save_image(task_id, prompt, image_bytes)
+        print(f"[SAVE] Image saved to {saved_path}")
         image_base64 = base64.b64encode(image_bytes).decode()
         state.update(
             task_id,
