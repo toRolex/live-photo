@@ -42,7 +42,8 @@ async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tupl
 
 
 async def _convert_to_mov(input_path: str, output_path: str, content_id: str) -> None:
-    """ffmpeg: video -> MOV (H.264) with QuickTime metadata."""
+    """ffmpeg: video -> MOV (H.264), then exiftool for QuickTime metadata."""
+    # Step 1: Convert to MOV with ffmpeg
     cmd = [
         "ffmpeg", "-y",
         "-i", input_path,
@@ -50,8 +51,6 @@ async def _convert_to_mov(input_path: str, output_path: str, content_id: str) ->
         "-pix_fmt", "yuv420p",
         "-r", "30",
         "-movflags", "+faststart",
-        "-metadata", f"com.apple.quicktime.content.identifier={content_id}",
-        "-metadata", "com.apple.quicktime.still-image-time=0",
         output_path,
     ]
     proc = await asyncio.create_subprocess_exec(
@@ -62,6 +61,24 @@ async def _convert_to_mov(input_path: str, output_path: str, content_id: str) ->
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg MOV conversion failed: {stderr.decode()}")
+
+    # Step 2: Inject ContentIdentifier with exiftool
+    if shutil.which("exiftool"):
+        cmd2 = [
+            "exiftool", "-api", "QuickTime", "-overwrite_original",
+            f"-Keys:ContentIdentifier={content_id}",
+            output_path,
+        ]
+        proc2 = await asyncio.create_subprocess_exec(
+            *cmd2,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr2 = await proc2.communicate()
+        if proc2.returncode != 0:
+            print(f"WARNING: exiftool metadata injection failed: {stderr2.decode()}")
+        else:
+            print(f"[META] ContentIdentifier={content_id} injected into MOV")
 
 
 async def _extract_frame(video_path: str, output_path: str) -> None:
