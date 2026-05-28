@@ -11,7 +11,7 @@ from httpx import AsyncClient
 
 from services.gpt_image import GPTImageService
 from services.livephoto import make_livephoto
-from services.seedance import APIMode, CLIMode
+from services.seedance import APIMode, CLIMode, VideoConfig
 from state import StateManager, TaskStatus
 
 OUTPUT_DIR = Path("output")
@@ -65,7 +65,7 @@ def _save_video(task_id: str, prompt: str, video_bytes: bytes) -> Path:
 
 
 async def run_video_pipeline(
-    prompt: str,
+    config: VideoConfig,
     task_id: str,
     state: StateManager,
     video_service: APIMode | CLIMode,
@@ -83,13 +83,10 @@ async def run_video_pipeline(
         try:
             if is_cli_mode:
                 assert isinstance(video_service, CLIMode)
-                video_url = await video_service.image_to_video(image_path, prompt)
+                video_url = await video_service.image_to_video(image_path, config)
             else:
                 assert isinstance(video_service, APIMode)
-                seedance_task_id = await video_service.submit(
-                    image_bytes=image_bytes,
-                    prompt=prompt,
-                )
+                seedance_task_id = await video_service.submit(config, image_bytes)
                 video_url = await video_service.poll(seedance_task_id)
 
             video_path = tmp / "output.mp4"
@@ -99,7 +96,7 @@ async def run_video_pipeline(
                     video_bytes = await resp.aread()
                     video_path.write_bytes(video_bytes)
 
-            saved_path = _save_video(task_id, prompt, video_bytes)
+            saved_path = _save_video(task_id, config.prompt, video_bytes)
             print(f"[SAVE] Video saved to {saved_path}")
         except Exception as e:
             state.update(task_id, TaskStatus.FAILED, error=f"视频生成失败: {e}")

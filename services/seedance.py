@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import dataclasses
 import hashlib
 import hmac
 import json
@@ -11,6 +12,15 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+
+
+@dataclasses.dataclass
+class VideoConfig:
+    """Video generation parameters."""
+    prompt: str = ""
+    seed: int = -1
+    frames: int = 121
+    last_frame_bytes: bytes | None = None
 
 
 def _sign_v4(access_key: str, secret_key: str, method: str, path: str,
@@ -62,18 +72,22 @@ class APIMode:
         self._sk = secret_key
         self._client = httpx.AsyncClient(timeout=120)
 
-    async def submit(self, image_bytes: bytes, prompt: str = "") -> str:
+    async def submit(self, config: VideoConfig, image_bytes: bytes) -> str:
         """Submit image-to-video task, return task_id."""
         query = urlencode({
             "Action": "CVSync2AsyncSubmitTask",
             "Version": "2022-08-31",
         })
+        img_parts = [base64.b64encode(image_bytes).decode()]
+        if config.last_frame_bytes:
+            img_parts.append(base64.b64encode(config.last_frame_bytes).decode())
+
         body = json.dumps({
             "req_key": self.REQ_KEY,
-            "binary_data_base64": [base64.b64encode(image_bytes).decode()],
-            "prompt": prompt[:800],
-            "seed": -1,
-            "frames": 121,
+            "binary_data_base64": img_parts,
+            "prompt": (config.prompt or "")[:800],
+            "seed": config.seed,
+            "frames": config.frames,
         })
 
         x_date = _now_utc()
@@ -135,18 +149,21 @@ class CLIMode:
     def __init__(self, poll_interval: int = 30) -> None:
         self._poll = poll_interval
 
-    async def image_to_video(self, image_path: str | Path, prompt: str = "") -> str:
+    async def image_to_video(self, image_path: str | Path, config: VideoConfig) -> str:
         """Run dreamina image2video, return video URL."""
+        duration = 5 if config.frames <= 121 else 10
         cmd = [
             "dreamina", "image2video",
             "--images", str(image_path),
-            "--duration", "5",
+            "--duration", str(duration),
             "--ratio", "16:9",
             "--video_resolution", "720P",
             "--poll", str(self._poll),
         ]
-        if prompt:
-            cmd += ["--prompt", prompt[:800]]
+        if config.prompt:
+            cmd += ["--prompt", (config.prompt)[:800]]
+        if config.seed >= 0:
+            cmd += ["--seed", str(config.seed)]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

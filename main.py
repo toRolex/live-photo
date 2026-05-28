@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, Response  # noqa: E402
 from dedup import DEDUP_WINDOW, make_prompt_hash
 from pipeline import cleanup_zips, get_zip, run_image_only, run_video_pipeline
 from services.gpt_image import GPTImageService
-from services.seedance import APIMode, CLIMode, get_service
+from services.seedance import APIMode, CLIMode, VideoConfig, get_service
 from state import StateManager, TaskStatus
 
 GPT_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -130,6 +130,23 @@ async def generate_video(request: Request):
     if not task.image_base64:
         raise HTTPException(400, "没有可用的图片数据")
 
+    # Video settings: default to image prompt, allow override
+    video_prompt = body.get("video_prompt") or task.prompt
+    video_seed = body.get("video_seed", -1)
+    video_frames = body.get("video_frames", 121)
+    last_frame_b64 = body.get("last_frame_base64")
+    last_frame_bytes = base64.b64decode(last_frame_b64) if last_frame_b64 else None
+
+    config = VideoConfig(
+        prompt=video_prompt,
+        seed=video_seed,
+        frames=video_frames,
+        last_frame_bytes=last_frame_bytes,
+    )
+
+    # Save video_prompt to task state for poll recovery
+    manager.update(task_id, task.status, video_prompt=video_prompt)
+
     image_bytes = base64.b64decode(task.image_base64)
     is_cli = mode == "cli"
     video = app.state.video_cli if is_cli else app.state.video_api
@@ -138,7 +155,7 @@ async def generate_video(request: Request):
 
     asyncio.create_task(
         run_video_pipeline(
-            prompt=task.prompt,
+            config=config,
             task_id=task_id,
             state=manager,
             video_service=video,
@@ -168,6 +185,18 @@ async def upload_and_generate(request: Request):
     if len(image_bytes) > 20 * 1024 * 1024:
         raise HTTPException(400, "图片文件不能超过 20MB")
 
+    video_prompt = (form.get("video_prompt") or "").strip()
+    video_seed = int(form.get("video_seed", -1) or -1)
+    video_frames = int(form.get("video_frames", 121) or 121)
+    last_frame_b64 = form.get("last_frame_base64")
+    last_frame_bytes = base64.b64decode(last_frame_b64) if last_frame_b64 else None
+    config = VideoConfig(
+        prompt=video_prompt,
+        seed=video_seed,
+        frames=video_frames,
+        last_frame_bytes=last_frame_bytes,
+    )
+
     ip = request.client.host if request.client else "unknown"
     manager: StateManager = app.state.manager
 
@@ -186,7 +215,7 @@ async def upload_and_generate(request: Request):
 
     asyncio.create_task(
         run_video_pipeline(
-            prompt="",
+            config=config,
             task_id=task_id,
             state=manager,
             video_service=video,
@@ -268,8 +297,9 @@ async def _run_one_shot(
         if not image_bytes:
             manager.update(task_id, TaskStatus.FAILED, error="图片数据无效")
             return
+        config = VideoConfig(prompt=prompt)
         await run_video_pipeline(
-            prompt=prompt,
+            config=config,
             task_id=task_id,
             state=manager,
             video_service=video_service,
@@ -299,6 +329,7 @@ async def status(task_id: str):
     }
     if task.status == TaskStatus.IMAGE_READY:
         result["image_base64"] = task.image_base64
+        result["video_prompt"] = task.video_prompt or task.prompt
     return result
 
 

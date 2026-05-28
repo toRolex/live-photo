@@ -29,6 +29,7 @@ class Task:
     prompt: str = ""
     prompt_hash: str = ""
     image_base64: str | None = None
+    video_prompt: str | None = None
 
 
 MAX_CONCURRENT = 10
@@ -77,6 +78,7 @@ class StateManager:
         download_url: str | None = None,
         error: str | None = None,
         image_base64: str | None = None,
+        video_prompt: str | None = None,
     ) -> Task | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -93,6 +95,8 @@ class StateManager:
             task.error = error
         if image_base64 is not None:
             task.image_base64 = image_base64
+        if video_prompt is not None:
+            task.video_prompt = video_prompt
         return task
 
     def get(self, task_id: str) -> Task | None:
