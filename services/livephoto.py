@@ -8,15 +8,17 @@ from pathlib import Path
 import pillow_heif
 from PIL import Image
 from makelive import make_live_photo as _makelive_make
+from makelive import save_live_photo_pair_as_pvt
 
 pillow_heif.register_heif_opener()
 
 
-async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tuple[Path, Path]:
-    """Convert video to Live Photo pair (MOV + HEIC) using makelive.
+async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tuple[Path, Path, Path]:
+    """Convert video to Live Photo pair (MOV + HEIC) + .pvt package using makelive.
 
-    Returns (mov_path, heic_path). Both files share matching ContentIdentifier
-    for iOS auto-pairing.
+    Returns (mov_path, heic_path, pvt_path). All three share matching ContentIdentifier
+    for iOS auto-pairing. The .pvt package is the most reliable way to AirDrop
+    Live Photos to iPhone.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -39,7 +41,10 @@ async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tupl
     # Step 3: Use makelive to inject matching ContentIdentifier into both files
     _makelive_make(str(heic_path), str(mov_path))
 
-    return mov_path, heic_path
+    # Step 4: Create .pvt package for reliable AirDrop transfer
+    _, pvt_path = save_live_photo_pair_as_pvt(str(heic_path), str(mov_path))
+
+    return mov_path, heic_path, Path(pvt_path)
 
 
 async def _convert_to_mov(input_path: str, output_path: str) -> None:

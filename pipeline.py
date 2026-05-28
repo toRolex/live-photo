@@ -1,6 +1,7 @@
 """Core orchestration: GPT -> Seedance -> ffmpeg -> ZIP."""
 
 import base64
+import shutil
 import tempfile
 import time
 import zipfile
@@ -106,23 +107,34 @@ async def run_video_pipeline(
         # Step 2: Package Live Photo
         state.update(task_id, TaskStatus.PACKAGING, "2/2", "正在打包 Live Photo…")
         try:
-            mov_path, heic_path = await make_livephoto(video_path, tmp)
-            zip_path = tmp / "live_photo.zip"
-            with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(mov_path, arcname=mov_path.name)
-                zf.write(heic_path, arcname=heic_path.name)
+            mov_path, heic_path, pvt_path = await make_livephoto(video_path, tmp)
 
             # Save Live Photo files to disk
             LIVE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
             safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (config.prompt or "live_photo")[:30])
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            saved_mov = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.mov"
-            saved_heic = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.heic"
-            saved_zip = LIVE_PHOTO_DIR / f"{timestamp}_{task_id[:8]}_{safe_prompt}.zip"
-            saved_mov.write_bytes(mov_path.read_bytes())
-            saved_heic.write_bytes(heic_path.read_bytes())
-            saved_zip.write_bytes(zip_path.read_bytes())
-            print(f"[SAVE] Live Photo saved to {saved_mov.parent}")
+            prefix = f"{timestamp}_{task_id[:8]}_{safe_prompt}"
+            saved_mov = LIVE_PHOTO_DIR / f"{prefix}.MOV"
+            saved_heic = LIVE_PHOTO_DIR / f"{prefix}.HEIC"
+            saved_pvt = LIVE_PHOTO_DIR / f"{prefix}.pvt"
+
+            # .pvt is a directory package, copy recursively
+            shutil.copy2(mov_path, saved_mov)
+            shutil.copy2(heic_path, saved_heic)
+            if pvt_path.is_dir():
+                saved_pvt.mkdir(parents=True, exist_ok=True)
+                for item in pvt_path.iterdir():
+                    if item.is_dir():
+                        shutil.copytree(item, saved_pvt / item.name)
+                    else:
+                        shutil.copy2(item, saved_pvt / item.name)
+            print(f"[SAVE] Live Photo saved to {LIVE_PHOTO_DIR} (MOV + HEIC + .pvt)")
+
+            # Create ZIP for download endpoint (contains MOV + HEIC)
+            zip_path = tmp / "live_photo.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.write(mov_path, arcname=mov_path.name)
+                zf.write(heic_path, arcname=heic_path.name)
 
             state.update(
                 task_id,
