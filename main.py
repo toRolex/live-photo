@@ -15,9 +15,9 @@ load_dotenv(override=True)
 from fastapi.responses import HTMLResponse, Response  # noqa: E402
 
 from dedup import DEDUP_WINDOW, make_prompt_hash
-from pipeline import cleanup_zips, get_zip, run_image_only, run_video_pipeline
+from pipeline import _save_image, cleanup_zips, get_zip, run_image_only, run_video_pipeline
 from services.gpt_image import GPTImageService
-from services.seedance import APIMode, CLIMode, VideoConfig, get_service
+from services.seedance import APIMode, VideoConfig, get_service
 from state import StateManager, TaskStatus
 
 GPT_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -136,6 +136,11 @@ async def upload_image(request: Request):
         raise HTTPException(503, str(e))
 
     image_base64 = base64.b64encode(image_bytes).decode()
+    try:
+        saved_path = _save_image(task_id, file.filename, image_bytes)
+        print(f"[SAVE] Uploaded image saved to {saved_path}")
+    except Exception as save_err:
+        print(f"[SAVE] Upload save failed: {save_err}")
     manager.update(
         task_id,
         TaskStatus.IMAGE_READY,
@@ -279,8 +284,11 @@ async def status(task_id: str):
     if task is None:
         raise HTTPException(404, "任务不存在或已过期")
     current_elapsed = task.elapsed_seconds
+    current_remaining = task.estimated_remaining
     if task.step_started_at > 0 and task.status not in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.IMAGE_READY):
         current_elapsed = round(time.time() - task.step_started_at, 1)
+        if task.estimated_remaining > 0:
+            current_remaining = max(0, task.estimated_remaining - current_elapsed)
     result = {
         "task_id": task.task_id,
         "status": task.status.value,
@@ -290,6 +298,8 @@ async def status(task_id: str):
         "error": task.error,
         "elapsed_seconds": current_elapsed,
         "progress_timeline": task.progress_timeline,
+        "progress_pct": task.progress_pct,
+        "estimated_remaining": round(current_remaining, 1),
     }
     if task.status == TaskStatus.IMAGE_READY:
         result["image_base64"] = task.image_base64

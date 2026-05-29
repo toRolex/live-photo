@@ -166,18 +166,44 @@ textarea:focus { border-color: #1d1d1f; }
 
 /* 进度条 */
 .progress-bar-wrap {
-  height: 4px; background: #f5f5f7; border-radius: 2px; margin-bottom: 12px; overflow: hidden;
+  height: 6px; background: #f5f5f7; border-radius: 3px; margin-bottom: 12px; overflow: hidden;
+  position: relative;
 }
 .progress-fill-animated {
-  height: 100%; background: #1d1d1f; border-radius: 2px;
-  transition: width 0.4s ease; width: 0;
+  height: 100%; background: linear-gradient(90deg, #1d1d1f 0%, #3d3d3f 50%, #1d1d1f 100%);
+  border-radius: 3px; transition: width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94); width: 0;
+  position: relative;
+}
+.progress-fill-animated::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 20px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: progressShine 1.5s ease-in-out infinite;
+}
+@keyframes progressShine {
+  0% { transform: translateX(-20px); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(20px); opacity: 0; }
+}
+.progress-bar-wrap.indeterminate {
+  animation: progressPulse 2s ease-in-out infinite;
 }
 .progress-bar-wrap.indeterminate .progress-fill-animated {
-  width: 30%; animation: progressIndeterminate 1.5s ease-in-out infinite;
+  width: 40%;
+  background: linear-gradient(90deg, #1d1d1f, #5d5d5f, #1d1d1f);
+  animation: progressIndeterminate 1.2s ease-in-out infinite;
+  border-radius: 3px;
 }
 @keyframes progressIndeterminate {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
+  0% { transform: translateX(-150%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(250%); }
+}
+@keyframes progressPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29, 29, 31, 0.1); }
+  50% { box-shadow: 0 0 8px 2px rgba(29, 29, 31, 0.15); }
 }
 
 /* 当前状态行 */
@@ -187,12 +213,33 @@ textarea:focus { border-color: #1d1d1f; }
 .spinner {
   width: 14px; height: 14px; border: 2px solid #e5e5ea; border-top-color: #1d1d1f;
   border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(29, 29, 31, 0.2);
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinner::after {
+  content: '';
+  position: absolute;
+  top: -2px; left: -2px; right: -2px; bottom: -2px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: rgba(29, 29, 31, 0.3);
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin { 
+  to { transform: rotate(360deg); } 
+}
+@keyframes spinnerPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29, 29, 31, 0.15); }
+  50% { box-shadow: 0 0 6px 2px rgba(29, 29, 31, 0.25); }
+}
 .elapsed-badge {
   margin-left: auto; font-size: 11px; color: #86868b; background: #f5f5f7;
   padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
 }
+.remaining-badge {
+  font-size: 11px; color: #ff9500; background: #fff5e6;
+  padding: 2px 8px; border-radius: 10px; flex-shrink: 0; margin-left: 8px;
+}
+.remaining-badge:empty { display: none; }
 
 /* 事件日志 */
 .event-log {
@@ -225,7 +272,8 @@ textarea:focus { border-color: #1d1d1f; }
 }
 .download-area a:hover { opacity: 0.9; }
 
-[aria-live="polite"] { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+/* 隐藏的 aria-live 区域（用于屏幕阅读器通知） */
+.aria-live-hidden[aria-live="polite"] { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -298,7 +346,7 @@ textarea:focus { border-color: #1d1d1f; }
 </div>
 
 <!-- D区: 进度面板 -->
-<div class="progress-panel hidden" id="progress-panel" aria-live="polite">
+<div class="progress-panel hidden" id="progress-panel">
   <div class="request-info" id="request-info"></div>
 
   <div class="step-indicator">
@@ -321,6 +369,7 @@ textarea:focus { border-color: #1d1d1f; }
   <div class="current-status">
     <span class="spinner" id="status-spinner"></span>
     <span id="status-text">准备中…</span>
+    <span class="remaining-badge" id="remaining-badge"></span>
     <span class="elapsed-badge" id="elapsed-badge"></span>
   </div>
 
@@ -336,7 +385,7 @@ textarea:focus { border-color: #1d1d1f; }
 </div>
 
 <script>
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL = 2000;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const IMAGE_KEY = 'lpm_image_task';
 const VIDEO_KEY = 'lpm_video_task';
@@ -367,11 +416,15 @@ function handleFileSelect(event) {
   if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
 
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const base64 = reader.result.split(',')[1];
     $('upload-filename').textContent = file.name;
     $('upload-zone').classList.add('has-file');
-    uploadImageToServer(file.name, base64);
+    try {
+      await uploadImageToServer(file.name, base64);
+    } catch (e) {
+      showError('上传失败，请重试');
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -664,36 +717,55 @@ function updateProgressFromData(data) {
     $('elapsed-badge').textContent = formatElapsed(sec);
   }
 
-  // Progress bar
+  // Update estimated remaining time
+  if (data.estimated_remaining > 0) {
+    $('remaining-badge').textContent = '约 ' + formatRemaining(data.estimated_remaining);
+  } else {
+    $('remaining-badge').textContent = '';
+  }
+
+  // Progress bar - use backend progress_pct if available
   let pct = 0;
+  if (data.progress_pct !== undefined && data.progress_pct !== null) {
+    pct = Math.min(100, Math.max(0, data.progress_pct));
+  } else {
+    // Fallback to status-based percentage
+    if (status === 'generating_image') { pct = 30; }
+    else if (status === 'image_ready') { pct = 100; }
+    else if (status === 'generating_video') { pct = 40; }
+    else if (status === 'packaging') { pct = 80; }
+    else if (status === 'done') { pct = 100; }
+    else if (!status || status === 'queued') { pct = 5; }
+  }
+
+  // Update UI based on status
   if (status === 'generating_image') {
-    pct = 30;
     setStep(1, 'active');
     $('status-text').textContent = data.progress_message || '生成图片中…';
     $('progress-bar-wrap').classList.add('indeterminate');
+    $('status-spinner').style.display = '';
   } else if (status === 'image_ready') {
-    pct = 100;
     setStep(1, 'done');
     $('status-text').textContent = '图片生成完成';
     $('progress-bar-wrap').classList.remove('indeterminate');
   } else if (status === 'generating_video') {
-    pct = 40;
     setStep(2, 'active');
     $('status-text').textContent = data.progress_message || '生成视频中…';
     $('progress-bar-wrap').classList.add('indeterminate');
+    $('status-spinner').style.display = '';
   } else if (status === 'packaging') {
-    pct = 80;
     setStep(2, 'done');
     setStep(3, 'active');
     $('status-text').textContent = data.progress_message || '封装 Live Photo…';
     $('progress-bar-wrap').classList.remove('indeterminate');
+    $('status-spinner').style.display = '';
   } else if (status === 'done') {
-    pct = 100;
     setStep(2, 'done');
     setStep(3, 'done');
     $('status-text').textContent = '生成完成!';
     $('status-spinner').style.display = 'none';
     $('progress-bar-wrap').classList.remove('indeterminate');
+    $('remaining-badge').textContent = '';
   } else if (status === 'failed') {
     setStep(1, 'error');
     setStep(2, 'error');
@@ -701,12 +773,13 @@ function updateProgressFromData(data) {
     $('status-text').textContent = data.error || '任务失败';
     $('status-spinner').style.display = 'none';
     $('progress-bar-wrap').classList.remove('indeterminate');
+    $('remaining-badge').textContent = '';
   }
 
   if (!status || status === 'queued') {
-    pct = 5;
     $('progress-bar-wrap').classList.add('indeterminate');
     $('status-text').textContent = data.progress_message || '排队中…';
+    $('status-spinner').style.display = '';
   }
 
   $('progress-fill').style.width = pct + '%';
@@ -766,6 +839,14 @@ function formatElapsed(s) {
   return m + 'm ' + rs + 's';
 }
 
+function formatRemaining(s) {
+  if (s < 60) return Math.ceil(s) + 's';
+  const m = Math.floor(s / 60);
+  const rs = Math.ceil(s % 60);
+  if (rs === 0) return m + 'm';
+  return m + 'm ' + rs + 's';
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -782,11 +863,15 @@ uploadZoneEl.addEventListener('drop', e => {
   if (!file) return;
   if (file.size > MAX_FILE_SIZE) { alert('图片不能超过 ' + (MAX_FILE_SIZE / 1024 / 1024) + 'MB'); return; }
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const base64 = reader.result.split(',')[1];
     $('upload-filename').textContent = file.name;
     $('upload-zone').classList.add('has-file');
-    uploadImageToServer(file.name, base64);
+    try {
+      await uploadImageToServer(file.name, base64);
+    } catch (e) {
+      showError('上传失败，请重试');
+    }
   };
   reader.readAsDataURL(file);
 });

@@ -10,7 +10,8 @@
 - **Live Photo 标准输出**：MOV 视频 + HEIC 封面 + `.pvt` 包，AirDrop 传输到 iPhone 自动识别为 Live Photo
 - **视频参数可调**：视频提示词、随机种子（可复现）、时长（5s / 10s）、尾帧图片
 - **双引擎支持**：CLI 模式（dreamina_cli）或 API 模式（火山引擎 Seedance 3.0）
-- **状态轮询**：实时进度条展示生成状态
+- **实时进度显示**：三步骤指示器 + 进度条 + 预计剩余时间 + 事件日志
+- **图片自动压缩**：超过 2MB 的图片自动压缩到 1280x720，确保 API 兼容性
 - **任务恢复**：页面刷新自动恢复未完成的轮询任务
 - **输入校验**：空输入拦截、500 字符限制、IP + prompt 5 分钟去重
 
@@ -61,10 +62,10 @@ uv run uvicorn main:app --reload
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/generate-image` | POST | 文本生成图片（返回 task_id，异步执行） |
+| `/api/upload-image` | POST | 上传图片（返回 task_id，状态为 IMAGE_READY） |
 | `/api/generate-video` | POST | 基于已有图片继续生成 Live Photo |
-| `/api/upload-and-generate` | POST | 上传图片，直接生成 Live Photo |
 | `/api/generate` | POST | 旧版一键接口：文本 → 图片 → 视频（兼容保留） |
-| `/api/status/{task_id}` | GET | 查询任务进度 |
+| `/api/status/{task_id}` | GET | 查询任务进度（含 progress_pct、estimated_remaining） |
 | `/api/download/{task_id}` | GET | 下载 Live Photo ZIP 包 |
 
 ## 前置验证
