@@ -31,6 +31,10 @@ uv.lock
 # Generated images
 output/
 
+# Superpowers
+.superpowers/
+docs/superpowers/
+
 # GSD
 after-wait.yaml
 state.yaml
