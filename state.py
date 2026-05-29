@@ -33,6 +33,8 @@ class Task:
     progress_timeline: list[dict] = field(default_factory=list)
     elapsed_seconds: float = 0.0
     step_started_at: float = 0.0
+    progress_pct: int = 0
+    estimated_remaining: float = 0.0
 
 
 MAX_CONCURRENT = 10
@@ -85,6 +87,8 @@ class StateManager:
         timeline_event: str | None = None,
         elapsed_seconds: float | None = None,
         step_started_at: float | None = None,
+        progress_pct: int | None = None,
+        estimated_remaining: float | None = None,
     ) -> Task | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -112,6 +116,10 @@ class StateManager:
             task.elapsed_seconds = elapsed_seconds
         if step_started_at is not None:
             task.step_started_at = step_started_at
+        if progress_pct is not None:
+            task.progress_pct = max(0, min(100, progress_pct))
+        if estimated_remaining is not None:
+            task.estimated_remaining = max(0, estimated_remaining)
         return task
 
     def get(self, task_id: str) -> Task | None:

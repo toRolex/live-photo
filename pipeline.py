@@ -25,7 +25,7 @@ def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
     """Save generated image to output/images/. Returns saved file path."""
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in prompt[:30])
+    safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (prompt or "image")[:30])
     filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.png"
     filepath = IMAGE_DIR / filename
     filepath.write_bytes(image_bytes)
@@ -41,13 +41,31 @@ async def run_image_only(
     """Generate image only — returns base64, sets IMAGE_READY."""
     _start = time.time()
     state.update(task_id, TaskStatus.GENERATING_IMAGE, "1/2", "正在生成图片…",
-                 timeline_event="开始调用 GPT 图片生成", step_started_at=_start, elapsed_seconds=0)
+                 timeline_event="开始调用 GPT 图片生成", step_started_at=_start, elapsed_seconds=0,
+                 progress_pct=10, estimated_remaining=30)
     try:
+        state.update(task_id, TaskStatus.GENERATING_IMAGE,
+                     timeline_event="正在连接 AI 服务…", progress_pct=15)
         image_bytes = await gpt_service.generate(prompt)
         _elapsed = round(time.time() - _start, 1)
-        saved_path = _save_image(task_id, prompt, image_bytes)
-        print(f"[SAVE] Image saved to {saved_path}")
+
         image_base64 = base64.b64encode(image_bytes).decode()
+
+        state.update(task_id, TaskStatus.GENERATING_IMAGE,
+                     timeline_event="图片数据已接收，正在保存…", progress_pct=90)
+        try:
+            saved_path = _save_image(task_id, prompt, image_bytes)
+            print(f"[SAVE] Image saved to {saved_path}")
+        except Exception as save_err:
+            print(f"[SAVE] Primary save failed: {save_err}, trying fallback from base64")
+            try:
+                fallback_path = IMAGE_DIR / f"{task_id[:8]}_fallback.png"
+                IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+                fallback_path.write_bytes(base64.b64decode(image_base64))
+                print(f"[SAVE] Fallback save OK: {fallback_path}")
+            except Exception as fb_err:
+                print(f"[SAVE] Fallback save also failed: {fb_err}")
+
         state.update(
             task_id,
             TaskStatus.IMAGE_READY,
@@ -55,6 +73,8 @@ async def run_image_only(
             image_base64=image_base64,
             timeline_event=f"图片生成完成，耗时 {_elapsed}s",
             elapsed_seconds=_elapsed,
+            progress_pct=100,
+            estimated_remaining=0,
         )
     except Exception as e:
         state.update(task_id, TaskStatus.FAILED, error=f"图片生成失败: {e}",
@@ -90,7 +110,8 @@ async def run_video_pipeline(
         _v_start = time.time()
         mode_label = "CLI" if is_cli_mode else "API"
         state.update(task_id, TaskStatus.GENERATING_VIDEO, "1/2", "正在生成动态视频…",
-                     timeline_event=f"开始视频生成（{mode_label} 模式）", step_started_at=_v_start, elapsed_seconds=0)
+                     timeline_event=f"开始视频生成（{mode_label} 模式）", step_started_at=_v_start, elapsed_seconds=0,
+                     progress_pct=30, estimated_remaining=120)
         try:
             if is_cli_mode:
                 assert isinstance(video_service, CLIMode)
@@ -136,7 +157,8 @@ async def run_video_pipeline(
         # Step 2: Package Live Photo
         _p_start = time.time()
         state.update(task_id, TaskStatus.PACKAGING, "2/2", "正在打包 Live Photo…",
-                     timeline_event="开始 HEIC/MOV 格式转换", step_started_at=_p_start, elapsed_seconds=0)
+                     timeline_event="开始 HEIC/MOV 格式转换", step_started_at=_p_start, elapsed_seconds=0,
+                     progress_pct=80, estimated_remaining=15)
         try:
             mov_path, heic_path, pvt_path = await make_livephoto(video_path, tmp)
             _p_elapsed = round(time.time() - _p_start, 1)

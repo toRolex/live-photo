@@ -5,6 +5,7 @@ import base64
 import dataclasses
 import hashlib
 import hmac
+import io
 import json
 import time
 from collections.abc import Awaitable, Callable
@@ -13,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+from PIL import Image
 
 
 @dataclasses.dataclass
@@ -73,12 +75,24 @@ class APIMode:
         self._sk = secret_key
         self._client = httpx.AsyncClient(timeout=120)
 
+    @staticmethod
+    def _compress_image(image_bytes: bytes, max_size: tuple = (1280, 720)) -> bytes:
+        """Compress image for API submission."""
+        img = Image.open(io.BytesIO(image_bytes))
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+
     async def submit(self, config: VideoConfig, image_bytes: bytes) -> str:
         """Submit image-to-video task, return task_id."""
         query = urlencode({
             "Action": "CVSync2AsyncSubmitTask",
             "Version": "2022-08-31",
         })
+        # Compress image if too large (>2MB)
+        if len(image_bytes) > 2 * 1024 * 1024:
+            image_bytes = self._compress_image(image_bytes)
         img_parts = [base64.b64encode(image_bytes).decode()]
         if config.last_frame_bytes:
             img_parts.append(base64.b64encode(config.last_frame_bytes).decode())
@@ -104,7 +118,13 @@ class APIMode:
             },
             content=body,
         )
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise RuntimeError(
+                f"Seedance API 返回非 JSON 响应 (status={resp.status_code}): "
+                f"{resp.text[:500]}"
+            ) from e
         if data.get("code") != 10000:
             raise RuntimeError(f"Seedance API error: {data}")
         return data["data"]["task_id"]
@@ -136,7 +156,13 @@ class APIMode:
                 },
                 content=body,
             )
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception as e:
+                raise RuntimeError(
+                    f"Seedance poll 返回非 JSON 响应 (status={resp.status_code}): "
+                    f"{resp.text[:500]}"
+                ) from e
             if data.get("code") != 10000:
                 raise RuntimeError(f"Seedance poll error: {data}")
             status = data["data"].get("status")
