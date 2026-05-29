@@ -1,13 +1,20 @@
-"""ffmpeg + pillow-heif Live Photo format conversion via makelive."""
+"""ffmpeg + pillow-heif Live Photo format conversion."""
 
 import asyncio
+import shutil
 import uuid
 from pathlib import Path
 
 import pillow_heif
-from makelive import make_live_photo as _makelive_make
-from makelive import save_live_photo_pair_as_pvt
 from PIL import Image
+
+try:
+    from makelive import make_live_photo as _makelive_make
+    from makelive import save_live_photo_pair_as_pvt as _makelive_save_pvt
+
+    _HAS_MAKELIVE = True
+except ImportError:
+    _HAS_MAKELIVE = False
 
 pillow_heif.register_heif_opener()
 
@@ -20,11 +27,11 @@ def set_ffmpeg_path(path: str) -> None:
 
 
 async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tuple[Path, Path, Path]:
-    """Convert video to Live Photo pair (MOV + HEIC) + .pvt package using makelive.
+    """Convert video to Live Photo pair (MOV + HEIC) + .pvt package.
 
-    Returns (mov_path, heic_path, pvt_path). All three share matching ContentIdentifier
-    for iOS auto-pairing. The .pvt package is the most reliable way to AirDrop
-    Live Photos to iPhone.
+    Returns (mov_path, heic_path, pvt_path). On macOS, ContentIdentifier is
+    injected into both files for iOS auto-pairing. On Windows, files are
+    produced without ContentIdentifier — transfer to a Mac for final pairing.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,13 +51,31 @@ async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tupl
     _png_to_heic(str(png_path), str(heic_path))
     png_path.unlink(missing_ok=True)
 
-    # Step 3: Use makelive to inject matching ContentIdentifier into both files
-    _makelive_make(str(heic_path), str(mov_path))
-
-    # Step 4: Create .pvt package for reliable AirDrop transfer
-    _, pvt_path = save_live_photo_pair_as_pvt(str(heic_path), str(mov_path))
+    # Step 3: ContentIdentifier injection + .pvt package
+    if _HAS_MAKELIVE:
+        _makelive_make(str(heic_path), str(mov_path))
+        _, pvt_path = _makelive_save_pvt(str(heic_path), str(mov_path))
+    else:
+        pvt_path = _make_pvt_fallback(str(heic_path), str(mov_path))
+        print("[LIVEPHOTO] makelive not available — .pvt created without ContentIdentifier pairing")
 
     return mov_path, heic_path, Path(pvt_path)
+
+
+def _make_pvt_fallback(heic_path: str, mov_path: str) -> str:
+    """Create minimal .pvt package without ContentIdentifier injection.
+
+    On Windows (where makelive/pyobjc isn't available), we create a simple
+    .pvt directory containing the MOV and HEIC files. The user can transfer
+    these to a Mac for final ContentIdentifier pairing.
+    """
+    heic = Path(heic_path)
+    mov = Path(mov_path)
+    pvt_dir = heic.parent / (heic.stem + ".pvt")
+    pvt_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(mov, pvt_dir / mov.name)
+    shutil.copy2(heic, pvt_dir / heic.name)
+    return str(pvt_dir)
 
 
 async def _convert_to_mov(input_path: str, output_path: str) -> None:
