@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -19,28 +20,57 @@ DIST = ROOT / "dist" / "live-photo-dist"
 
 # ── ffmpeg download ──────────────────────────────────────────────────
 
-FFMPEG_WIN_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+# Primary: BtbN auto-builds (GitHub, usually accessible). Fallback: gyan.dev.
+_FFMPEG_WIN_URLS = [
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+]
 FFMPEG_MAC_URL = "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
+
+
+def _http_get(url: str, dest: str, retries: int = 3) -> None:
+    """Download `url` to `dest` with retry + exponential backoff."""
+    last_err = None
+    for i in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            Path(dest).write_bytes(data)
+            return
+        except Exception as e:
+            last_err = e
+            if i < retries - 1:
+                wait = (i + 1) * 5
+                print(f"[BUILD] Download failed, retrying in {wait}s… ({e})")
+                time.sleep(wait)
+    raise RuntimeError(f"Download failed after {retries} attempts: {last_err}")
 
 
 def download_ffmpeg_win(target_dir: Path) -> Path:
     """Download ffmpeg for Windows, extract ffmpeg.exe into target_dir."""
-    print("[BUILD] Downloading ffmpeg for Windows...")
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    urllib.request.urlretrieve(FFMPEG_WIN_URL, tmp.name)
-    with zipfile.ZipFile(tmp.name) as zf:
-        for name in zf.namelist():
-            if name.endswith("/bin/ffmpeg.exe"):
-                zf.extract(name, target_dir)
-                extracted = target_dir / name
-                dest = target_dir / "ffmpeg.exe"
-                shutil.move(str(extracted), str(dest))
-                # Clean up extracted dirs
-                top_dir = name.split("/")[0]
-                shutil.rmtree(target_dir / top_dir, ignore_errors=True)
-                print(f"[BUILD] ffmpeg.exe extracted to {dest}")
-                return dest
-    raise RuntimeError("ffmpeg.exe not found in downloaded archive")
+    for url in _FFMPEG_WIN_URLS:
+        try:
+            print(f"[BUILD] Downloading ffmpeg: {url}")
+            tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+            tmp.close()
+            _http_get(url, tmp.name, retries=2)
+            with zipfile.ZipFile(tmp.name) as zf:
+                for name in zf.namelist():
+                    if name.endswith("/bin/ffmpeg.exe") or name == "ffmpeg.exe":
+                        zf.extract(name, target_dir)
+                        extracted = target_dir / name
+                        dest = target_dir / "ffmpeg.exe"
+                        shutil.move(str(extracted), str(dest))
+                        top_dir = name.split("/")[0]
+                        if top_dir != "ffmpeg.exe":
+                            shutil.rmtree(target_dir / top_dir, ignore_errors=True)
+                        print(f"[BUILD] ffmpeg.exe extracted to {dest}")
+                        return dest
+            print(f"[BUILD] ffmpeg.exe not found in {url}, trying next URL…")
+        except Exception as e:
+            print(f"[BUILD] Failed: {e}")
+    raise RuntimeError("Could not download ffmpeg from any source")
 
 
 def download_ffmpeg_mac(target_dir: Path) -> Path:
