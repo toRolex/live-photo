@@ -427,3 +427,11 @@ async def download(task_id: str):
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=live_photo_{task_id[:8]}.zip"},
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.getenv("LPM_PORT", "8000"))
+    print(f"[INIT] Starting server on http://localhost:{port}")
+    uvicorn.run(app, host="127.0.0.1", port=port)
