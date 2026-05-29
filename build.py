@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+CACHE = ROOT / ".cache"
 DIST = ROOT / "dist" / "live-photo-dist"
 
 # ── ffmpeg download ──────────────────────────────────────────────────
@@ -86,23 +87,23 @@ def download_ffmpeg_mac(target_dir: Path) -> Path:
     return dest
 
 
-def ensure_ffmpeg(target_dir: Path) -> Path:
-    """Ensure ffmpeg binary exists in target_dir."""
+def ensure_ffmpeg(cache_dir: Path) -> Path:
+    """Download ffmpeg to cache_dir once, return path."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
-        dest = target_dir / "ffmpeg.exe"
+        dest = cache_dir / "ffmpeg.exe"
         if not dest.exists():
-            download_ffmpeg_win(target_dir)
+            download_ffmpeg_win(cache_dir)
         return dest
     else:
-        dest = target_dir / "ffmpeg"
+        dest = cache_dir / "ffmpeg"
         if not dest.exists():
-            # On macOS/Linux, copy from system if available
             system_ffmpeg = shutil.which("ffmpeg")
             if system_ffmpeg:
                 shutil.copy(system_ffmpeg, dest)
                 dest.chmod(0o755)
             else:
-                download_ffmpeg_mac(target_dir)
+                download_ffmpeg_mac(cache_dir)
         return dest
 
 
@@ -137,8 +138,11 @@ def main():
     print(f"[BUILD] Platform: {sys.platform}")
     print(f"[BUILD] Python: {sys.version}")
 
+    ffmpeg_path = ensure_ffmpeg(CACHE)
+
     run_pyinstaller()
-    ensure_ffmpeg(DIST)
+    shutil.copy2(ffmpeg_path, DIST / ffmpeg_path.name)
+    print(f"[BUILD] ffmpeg copied from cache to {DIST}")
 
     print(f"[BUILD] Output: {DIST}")
     print("[BUILD] To run: double-click live-photo.exe (Windows) or ./live-photo (macOS/Linux)")
