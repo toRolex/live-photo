@@ -21,12 +21,26 @@ VIDEO_DIR = OUTPUT_DIR / "videos"
 LIVE_PHOTO_DIR = OUTPUT_DIR / "live_photos"
 
 
+def _detect_ext(image_bytes: bytes) -> str:
+    """Detect image extension from file header bytes."""
+    if image_bytes[:4] == b"\x89PNG":
+        return ".png"
+    if image_bytes[:2] == b"\xff\xd8":
+        return ".jpg"
+    if image_bytes[:4] in (b"RIFF", b"WEBP"):
+        return ".webp"
+    if image_bytes[:4] == b"GIF8":
+        return ".gif"
+    return ".png"
+
+
 def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
     """Save generated image to output/images/. Returns saved file path."""
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (prompt or "image")[:30])
-    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.png"
+    ext = _detect_ext(image_bytes)
+    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}{ext}"
     filepath = IMAGE_DIR / filename
     filepath.write_bytes(image_bytes)
     return filepath
