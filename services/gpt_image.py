@@ -45,11 +45,6 @@ class GPTImageService:
         if b64_match:
             return base64.b64decode(b64_match.group(1))
 
-        try:
-            return base64.b64decode(full_content)
-        except (ValueError, binascii.Error):
-            pass
-
         # Try markdown image URL: ![image](https://...)
         url_match = re.search(r"\]\((https?://[^)]+)\)", full_content)
         if url_match:
@@ -57,6 +52,12 @@ class GPTImageService:
             resp = await self._http.get(img_url)
             resp.raise_for_status()
             return resp.content
+
+        # Last resort: try full content as pure base64
+        try:
+            return base64.b64decode(full_content, validate=True)
+        except (ValueError, binascii.Error):
+            pass
 
         raise RuntimeError(f"GPT response does not contain valid image data: {full_content[:200]}")
 
