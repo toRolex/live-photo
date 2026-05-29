@@ -1,16 +1,22 @@
 """ffmpeg + pillow-heif Live Photo format conversion via makelive."""
 
 import asyncio
-import shutil
 import uuid
 from pathlib import Path
 
 import pillow_heif
-from PIL import Image
 from makelive import make_live_photo as _makelive_make
 from makelive import save_live_photo_pair_as_pvt
+from PIL import Image
 
 pillow_heif.register_heif_opener()
+
+_FFMPEG = "ffmpeg"
+
+
+def set_ffmpeg_path(path: str) -> None:
+    global _FFMPEG
+    _FFMPEG = path
 
 
 async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tuple[Path, Path, Path]:
@@ -50,7 +56,7 @@ async def make_livephoto(video_path: str | Path, output_dir: str | Path) -> tupl
 async def _convert_to_mov(input_path: str, output_path: str) -> None:
     """ffmpeg: video -> MOV (H.264)."""
     cmd = [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-i", input_path,
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
@@ -71,7 +77,7 @@ async def _convert_to_mov(input_path: str, output_path: str) -> None:
 async def _extract_frame(video_path: str, output_path: str) -> None:
     """ffmpeg: extract first frame as PNG."""
     cmd = [
-        "ffmpeg", "-y",
+        _FFMPEG, "-y",
         "-i", video_path,
         "-vf", "select=eq(n\\,0)",
         "-vframes", "1",

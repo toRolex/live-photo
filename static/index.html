@@ -47,6 +47,47 @@ textarea:focus { border-color: #1d1d1f; }
 }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
+	/* ── Settings panel ── */
+	.settings-toggle {
+	  position: fixed; bottom: 20px; right: 20px; width: 44px; height: 44px;
+	  border-radius: 50%; background: #1d1d1f; color: #fff; border: none;
+	  font-size: 20px; cursor: pointer; box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+	  z-index: 100; transition: transform 0.2s; display: flex; align-items: center; justify-content: center;
+	}
+	.settings-toggle:hover { transform: scale(1.08); }
+	.settings-overlay {
+	  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+	  z-index: 200; align-items: center; justify-content: center;
+	}
+	.settings-overlay.visible { display: flex; }
+	.settings-dialog {
+	  background: #fff; border-radius: 14px; padding: 24px; width: 90%; max-width: 440px;
+	  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+	}
+	.settings-dialog h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+	.settings-dialog label {
+	  display: block; font-size: 13px; font-weight: 500; color: #1d1d1f; margin-bottom: 4px;
+	}
+	.settings-dialog input {
+	  width: 100%; padding: 8px 12px; border: 1px solid #d2d2d7; border-radius: 8px;
+	  font-size: 13px; font-family: inherit; outline: none; margin-bottom: 12px;
+	  transition: border-color 0.2s;
+	}
+	.settings-dialog input:focus { border-color: #1d1d1f; }
+	.settings-dialog .hint { font-size: 11px; color: #86868b; margin-top: -8px; margin-bottom: 12px; }
+	.settings-dialog .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+	.settings-dialog .btn-row button {
+	  padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+	  border: 1px solid #d2d2d7; transition: all 0.2s;
+	}
+	.settings-dialog .btn-save { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+	.settings-dialog .btn-save:hover { opacity: 0.9; }
+	.settings-dialog .btn-cancel { background: #fff; color: #1d1d1f; }
+	.settings-dialog .btn-cancel:hover { background: #f5f5f7; }
+	.settings-dialog .status-msg { font-size: 12px; color: #34c759; margin-top: 8px; display: none; }
+	.settings-dialog .status-msg.error { color: #ff3b30; }
+	.settings-dialog .status-msg.visible { display: block; }
+
 /* ── Divider ── */
 .divider {
   display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: #86868b; font-size: 13px;
@@ -382,6 +423,37 @@ textarea:focus { border-color: #1d1d1f; }
 <!-- 下载区 -->
 <div class="download-area" id="download-area">
   <a id="download-link" href="#">下载 Live Photo</a>
+</div>
+
+<!-- 设置按钮 -->
+<button class="settings-toggle" id="settings-toggle" title="设置 API Key" onclick="openSettings()">&#x2699;</button>
+
+<!-- 设置面板 -->
+<div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this) closeSettings()">
+  <div class="settings-dialog">
+    <h3>API 配置</h3>
+    <label for="cfg-openai-key">OPENAI_API_KEY</label>
+    <input type="password" id="cfg-openai-key" placeholder="sk-..." autocomplete="off">
+    <p class="hint">GPT 图片生成必需</p>
+
+    <label for="cfg-openai-base">OPENAI_BASE_URL</label>
+    <input type="text" id="cfg-openai-base" placeholder="https://wcnb.ai/v1">
+    <p class="hint">API 中转地址，默认 wcnb.ai</p>
+
+    <label for="cfg-seedance-ak">SEEDANCE_ACCESS_KEY</label>
+    <input type="password" id="cfg-seedance-ak" placeholder="AKL..." autocomplete="off">
+    <p class="hint">火山引擎即梦 API（视频生成）</p>
+
+    <label for="cfg-seedance-sk">SEEDANCE_SECRET_KEY</label>
+    <input type="password" id="cfg-seedance-sk" placeholder="SK..." autocomplete="off">
+    <p class="hint">火山引擎即梦 API Secret</p>
+
+    <div class="btn-row">
+      <button class="btn-cancel" onclick="closeSettings()">取消</button>
+      <button class="btn-save" onclick="saveSettings()">保存</button>
+    </div>
+    <div class="status-msg" id="settings-msg"></div>
+  </div>
 </div>
 
 <script>
@@ -891,6 +963,50 @@ window.addEventListener('DOMContentLoaded', () => {
     startImagePolling(savedImage);
   }
 });
+
+	// ── Settings ──
+
+	async function openSettings() {
+	  $('settings-overlay').classList.add('visible');
+	  $('settings-msg').classList.remove('visible', 'error');
+	  try {
+	    const resp = await fetch('/api/config');
+	    if (!resp.ok) return;
+	    const data = await resp.json();
+	    $('cfg-openai-key').value = data.OPENAI_API_KEY || '';
+	    $('cfg-openai-base').value = data.OPENAI_BASE_URL || '';
+	    $('cfg-seedance-ak').value = data.SEEDANCE_ACCESS_KEY || '';
+	    $('cfg-seedance-sk').value = data.SEEDANCE_SECRET_KEY || '';
+	  } catch (e) { /* ignore */ }
+	}
+
+	function closeSettings() {
+	  $('settings-overlay').classList.remove('visible');
+	}
+
+	async function saveSettings() {
+	  const msg = $('settings-msg');
+	  msg.classList.remove('visible', 'error');
+	  try {
+	    const resp = await fetch('/api/config', {
+	      method: 'POST',
+	      headers: { 'Content-Type': 'application/json' },
+	      body: JSON.stringify({
+	        OPENAI_API_KEY: $('cfg-openai-key').value.trim(),
+	        OPENAI_BASE_URL: $('cfg-openai-base').value.trim(),
+	        SEEDANCE_ACCESS_KEY: $('cfg-seedance-ak').value.trim(),
+	        SEEDANCE_SECRET_KEY: $('cfg-seedance-sk').value.trim(),
+	      }),
+	    });
+	    if (!resp.ok) throw new Error('保存失败');
+	    msg.textContent = '已保存，立即生效';
+	    msg.classList.add('visible');
+	    setTimeout(closeSettings, 1200);
+	  } catch (e) {
+	    msg.textContent = '保存失败，请重试';
+	    msg.classList.add('visible', 'error');
+	  }
+	}
 </script>
 
 </body>

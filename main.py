@@ -2,9 +2,12 @@
 
 import asyncio
 import base64
+import json
 import os
+import sys
 import time
 import uuid
+import webbrowser
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,13 +20,64 @@ from fastapi.responses import HTMLResponse, Response  # noqa: E402
 from dedup import DEDUP_WINDOW, make_prompt_hash
 from pipeline import _save_image, cleanup_zips, get_zip, run_image_only, run_video_pipeline
 from services.gpt_image import GPTImageService
+from services.livephoto import set_ffmpeg_path
 from services.seedance import APIMode, VideoConfig, get_service
 from state import StateManager, TaskStatus
 
-GPT_API_KEY = os.getenv("OPENAI_API_KEY", "")
-GPT_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://wcnb.ai/v1")
-SEEDANCE_AK = os.getenv("SEEDANCE_ACCESS_KEY", "")
-SEEDANCE_SK = os.getenv("SEEDANCE_SECRET_KEY", "")
+
+def _exe_dir() -> Path:
+    """Directory containing the executable (or script), for config file lookup."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent
+
+
+def _static_dir() -> Path:
+    """Directory containing static files — works both dev and PyInstaller."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) / "static"
+    return Path(__file__).resolve().parent / "static"
+
+
+def _find_ffmpeg() -> str:
+    """Find ffmpeg binary — bundled copy first, then system PATH."""
+    exe_dir = _exe_dir()
+    for candidate in [
+        exe_dir / "ffmpeg.exe",
+        exe_dir / "ffmpeg",
+        exe_dir / "bin" / "ffmpeg.exe",
+        exe_dir / "bin" / "ffmpeg",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return "ffmpeg"
+
+
+def _load_config() -> dict:
+    """Load config from config.json next to executable, falling back to env vars."""
+    config_path = _exe_dir() / "config.json"
+    if config_path.exists():
+        try:
+            return json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_config(data: dict) -> None:
+    _exe_dir().joinpath("config.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+CONFIG = _load_config()
+
+GPT_API_KEY = CONFIG.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+GPT_BASE_URL = CONFIG.get("OPENAI_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://wcnb.ai/v1")
+SEEDANCE_AK = CONFIG.get("SEEDANCE_ACCESS_KEY") or os.getenv("SEEDANCE_ACCESS_KEY", "")
+SEEDANCE_SK = CONFIG.get("SEEDANCE_SECRET_KEY") or os.getenv("SEEDANCE_SECRET_KEY", "")
+
+_FFMPEG_PATH = _find_ffmpeg()
+set_ffmpeg_path(_FFMPEG_PATH)
+print(f"[INIT] ffmpeg: {_FFMPEG_PATH}")
 
 
 @asynccontextmanager
@@ -39,6 +93,11 @@ async def lifespan(app: FastAPI):
         secret_key=SEEDANCE_SK,
     ) if SEEDANCE_AK and SEEDANCE_SK else None
     timer = asyncio.create_task(_cleanup_loop(app.state.manager))
+
+    # Auto-open browser after a short delay
+    if not os.getenv("LPM_NO_BROWSER"):
+        asyncio.get_running_loop().call_later(1.0, lambda: webbrowser.open("http://localhost:8000"))
+
     yield
     timer.cancel()
     try:
@@ -63,7 +122,7 @@ async def _cleanup_loop(state_manager: StateManager):
 
 @app.get("/")
 async def index() -> HTMLResponse:
-    return HTMLResponse((Path("static") / "index.html").read_text())
+    return HTMLResponse((_static_dir() / "index.html").read_text())
 
 
 def _normalize_mode(raw: object, default: str = "cli") -> str:
@@ -272,6 +331,57 @@ async def generate(request: Request):
     asyncio.create_task(_run_one_shot())
 
     return {"task_id": task_id}
+
+
+# ── Config ────────────────────────────────────────────────────────────
+
+
+def _reload_services(app):
+    """Rebuild GPT and video services from current globals after config change."""
+    app.state.gpt = GPTImageService(GPT_API_KEY, GPT_BASE_URL) if GPT_API_KEY else None
+    app.state.video_cli = get_service(mode="cli")
+    old_api = app.state.video_api
+    app.state.video_api = get_service(
+        mode="api", access_key=SEEDANCE_AK, secret_key=SEEDANCE_SK
+    ) if SEEDANCE_AK and SEEDANCE_SK else None
+    if old_api and isinstance(old_api, APIMode):
+        asyncio.ensure_future(old_api._client.aclose())
+
+
+@app.get("/api/config")
+async def get_config():
+    return {
+        "OPENAI_API_KEY": _mask(GPT_API_KEY),
+        "OPENAI_BASE_URL": GPT_BASE_URL,
+        "SEEDANCE_ACCESS_KEY": _mask(SEEDANCE_AK),
+        "SEEDANCE_SECRET_KEY": _mask(SEEDANCE_SK),
+    }
+
+
+@app.post("/api/config")
+async def save_config(request: Request):
+    global GPT_API_KEY, GPT_BASE_URL, SEEDANCE_AK, SEEDANCE_SK
+    body = await request.json()
+    data = {}
+    for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "SEEDANCE_ACCESS_KEY", "SEEDANCE_SECRET_KEY"):
+        val = (body.get(key) or "").strip()
+        if val and not val.startswith("***"):
+            data[key] = val
+    _save_config(data)
+
+    CONFIG.update(data)
+    GPT_API_KEY = CONFIG.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+    GPT_BASE_URL = CONFIG.get("OPENAI_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://wcnb.ai/v1")
+    SEEDANCE_AK = CONFIG.get("SEEDANCE_ACCESS_KEY") or os.getenv("SEEDANCE_ACCESS_KEY", "")
+    SEEDANCE_SK = CONFIG.get("SEEDANCE_SECRET_KEY") or os.getenv("SEEDANCE_SECRET_KEY", "")
+    _reload_services(request.app)
+    return {"ok": True}
+
+
+def _mask(s: str) -> str:
+    if len(s) <= 8:
+        return "***"
+    return s[:4] + "***" + s[-4:]
 
 
 # ── Status / Download ──────────────────────────────────────────────────
