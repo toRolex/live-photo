@@ -58,14 +58,14 @@ def _load_config() -> dict:
     config_path = _exe_dir() / "config.json"
     if config_path.exists():
         try:
-            return json.loads(config_path.read_text())
+            return json.loads(config_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {}
 
 
 def _save_config(data: dict) -> None:
-    _exe_dir().joinpath("config.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    _exe_dir().joinpath("config.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 CONFIG = _load_config()
@@ -122,7 +122,7 @@ async def _cleanup_loop(state_manager: StateManager):
 
 @app.get("/")
 async def index() -> HTMLResponse:
-    return HTMLResponse((_static_dir() / "index.html").read_text())
+    return HTMLResponse((_static_dir() / "index.html").read_text(encoding="utf-8"))
 
 
 def _normalize_mode(raw: object, default: str = "cli") -> str:
