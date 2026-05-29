@@ -1,9 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
-from pathlib import Path
-
-_root = Path(__file__).parent
 
 a = Analysis(
     ['main.py'],
@@ -14,7 +11,6 @@ a = Analysis(
     ],
     hiddenimports=[
         'pillow_heif',
-        'makelive',
         'PIL',
         'httpx',
         'openai',
