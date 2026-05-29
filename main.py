@@ -425,7 +425,7 @@ async def download(task_id: str):
     return Response(
         content=zip_bytes,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=live_photo_{task_id[:8]}.zip"},
+        headers={"Content-Disposition": f"attachment; filename=live_photo_{task_id[:8]}.pvt.zip"},
     )
 
 

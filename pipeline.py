@@ -177,7 +177,7 @@ async def run_video_pipeline(
             mov_path, heic_path, pvt_path = await make_livephoto(video_path, tmp)
             _p_elapsed = round(time.time() - _p_start, 1)
             state.update(task_id, TaskStatus.PACKAGING,
-                         timeline_event="HEIC/MOV 转换完成，开始打包 ZIP",
+                         timeline_event="HEIC/MOV 转换完成，开始打包 PVT",
                          elapsed_seconds=_p_elapsed)
 
             # Save Live Photo files to disk
@@ -201,11 +201,12 @@ async def run_video_pipeline(
                         shutil.copy2(item, saved_pvt / item.name)
             print(f"[SAVE] Live Photo saved to {LIVE_PHOTO_DIR} (MOV + HEIC + .pvt)")
 
-            # Create ZIP for download endpoint (contains MOV + HEIC)
-            zip_path = tmp / "live_photo.zip"
+            # Create ZIP of .pvt package for download
+            zip_path = tmp / "live_photo.pvt.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(mov_path, arcname=mov_path.name)
-                zf.write(heic_path, arcname=heic_path.name)
+                for item in sorted(pvt_path.rglob('*')):
+                    if item.is_file():
+                        zf.write(item, arcname=item.relative_to(pvt_path))
 
             # elapsed_seconds here is total time from video start to packaging done,
             # not just the last step duration. The status endpoint returns this as-is
