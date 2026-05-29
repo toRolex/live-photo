@@ -574,7 +574,13 @@ function startImagePolling(taskId) {
   pollTimer = setInterval(async () => {
     try {
       const resp = await fetch('/api/status/' + taskId);
-      if (!resp.ok) { clearPollTimer(); return; }
+      if (!resp.ok) {
+        clearPollTimer();
+        hideProgressPanel();
+        localStorage.removeItem(IMAGE_KEY);
+        currentImageTaskId = null;
+        return;
+      }
       const data = await resp.json();
       updateProgressFromData(data);
 
@@ -586,6 +592,7 @@ function startImagePolling(taskId) {
         clearPollTimer();
         showError(data.error || '生成失败，请重试');
         localStorage.removeItem(IMAGE_KEY);
+        hideProgressPanel();
         $('submit-btn').disabled = false;
       }
     } catch (e) { /* continue polling */ }
@@ -688,7 +695,14 @@ function startVideoPolling(taskId, onDone) {
   pollTimer = setInterval(async () => {
     try {
       const resp = await fetch('/api/status/' + taskId);
-      if (!resp.ok) { clearPollTimer(); return; }
+      if (!resp.ok) {
+        clearPollTimer();
+        hideProgressPanel();
+        localStorage.removeItem(VIDEO_KEY);
+        localStorage.removeItem(IMAGE_KEY);
+        onDone();
+        return;
+      }
       const data = await resp.json();
       updateProgressFromData(data);
 
@@ -704,6 +718,7 @@ function startVideoPolling(taskId, onDone) {
         showError(data.error || '生成失败，请重试');
         $('continue-btn').disabled = false;
         localStorage.removeItem(VIDEO_KEY);
+        hideProgressPanel();
         onDone();
       }
     } catch (e) { /* continue polling */ }
