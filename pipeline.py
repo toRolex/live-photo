@@ -201,12 +201,14 @@ async def run_video_pipeline(
                         shutil.copy2(item, saved_pvt / item.name)
             print(f"[SAVE] Live Photo saved to {LIVE_PHOTO_DIR} (MOV + HEIC + .pvt)")
 
-            # Create ZIP of .pvt package for download
+            # Create ZIP of .pvt package for download — preserve .pvt dir name
             zip_path = tmp / "live_photo.pvt.zip"
+            pvt_dirname = pvt_path.name  # e.g. "E71E8A13.pvt"
             with zipfile.ZipFile(zip_path, "w") as zf:
                 for item in sorted(pvt_path.rglob('*')):
                     if item.is_file():
-                        zf.write(item, arcname=item.relative_to(pvt_path))
+                        arcname = str(Path(pvt_dirname) / item.relative_to(pvt_path))
+                        zf.write(item, arcname=arcname)
 
             # elapsed_seconds here is total time from video start to packaging done,
             # not just the last step duration. The status endpoint returns this as-is
