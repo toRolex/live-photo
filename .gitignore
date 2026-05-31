@@ -38,3 +38,4 @@ docs/superpowers/
 # GSD
 after-wait.yaml
 state.yaml
+.cache/

@@ -21,12 +21,26 @@ VIDEO_DIR = OUTPUT_DIR / "videos"
 LIVE_PHOTO_DIR = OUTPUT_DIR / "live_photos"
 
 
+def _detect_ext(image_bytes: bytes) -> str:
+    """Detect image extension from file header bytes."""
+    if image_bytes[:4] == b"\x89PNG":
+        return ".png"
+    if image_bytes[:2] == b"\xff\xd8":
+        return ".jpg"
+    if image_bytes[:4] in (b"RIFF", b"WEBP"):
+        return ".webp"
+    if image_bytes[:4] == b"GIF8":
+        return ".gif"
+    return ".png"
+
+
 def _save_image(task_id: str, prompt: str, image_bytes: bytes) -> Path:
     """Save generated image to output/images/. Returns saved file path."""
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_prompt = "".join(c if c.isalnum() or c in " _-" else "_" for c in (prompt or "image")[:30])
-    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}.png"
+    ext = _detect_ext(image_bytes)
+    filename = f"{timestamp}_{task_id[:8]}_{safe_prompt}{ext}"
     filepath = IMAGE_DIR / filename
     filepath.write_bytes(image_bytes)
     return filepath
@@ -163,7 +177,7 @@ async def run_video_pipeline(
             mov_path, heic_path, pvt_path = await make_livephoto(video_path, tmp)
             _p_elapsed = round(time.time() - _p_start, 1)
             state.update(task_id, TaskStatus.PACKAGING,
-                         timeline_event="HEIC/MOV 转换完成，开始打包 ZIP",
+                         timeline_event="HEIC/MOV 转换完成，开始打包 PVT",
                          elapsed_seconds=_p_elapsed)
 
             # Save Live Photo files to disk
@@ -187,11 +201,14 @@ async def run_video_pipeline(
                         shutil.copy2(item, saved_pvt / item.name)
             print(f"[SAVE] Live Photo saved to {LIVE_PHOTO_DIR} (MOV + HEIC + .pvt)")
 
-            # Create ZIP for download endpoint (contains MOV + HEIC)
-            zip_path = tmp / "live_photo.zip"
+            # Create ZIP of .pvt package for download — preserve .pvt dir name
+            zip_path = tmp / "live_photo.pvt.zip"
+            pvt_dirname = pvt_path.name  # e.g. "E71E8A13.pvt"
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(mov_path, arcname=mov_path.name)
-                zf.write(heic_path, arcname=heic_path.name)
+                for item in sorted(pvt_path.rglob('*')):
+                    if item.is_file():
+                        arcname = str(Path(pvt_dirname) / item.relative_to(pvt_path))
+                        zf.write(item, arcname=arcname)
 
             # elapsed_seconds here is total time from video start to packaging done,
             # not just the last step duration. The status endpoint returns this as-is
